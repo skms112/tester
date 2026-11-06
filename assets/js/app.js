@@ -206,7 +206,14 @@
       const r = mine.find((x) => x.id === copy.dataset.copy);
       if (!r) return;
       try { await navigator.clipboard.writeText(recipeText(r)); copy.textContent = "تم النسخ ✓"; }
-      catch (_) { copy.textContent = "ما قدرنا ننسخ"; }
+      catch (_) {
+        // بديل: نعرض النص محدد عشان المستخدم ينسخه بنفسه
+        const card = copy.closest(".card");
+        let ta = card.querySelector("textarea.copy-box");
+        if (!ta) { ta = document.createElement("textarea"); ta.className = "input copy-box"; ta.rows = 6; ta.readOnly = true; card.appendChild(ta); }
+        ta.value = recipeText(r); ta.focus(); ta.select();
+        copy.textContent = "حدد النص وانسخه";
+      }
       setTimeout(() => { copy.textContent = "انسخ الوصفة"; }, 1800);
     }
   });
@@ -235,7 +242,12 @@
     };
     if (!r.title) return;
     mine.unshift(r);
-    if (!store.set(KEY, mine)) alert("ما قدرنا نحفظ في المتصفح (ممكن التصفح الخاص مفعّل). الوصفة بتظهر لين تسكّر الصفحة.");
+    const msg = $("#rMsg");
+    msg.textContent = store.set(KEY, mine)
+      ? "تم حفظ الوصفة ✓"
+      : "انضافت الوصفة، بس المتصفح ما سمح بالحفظ الدائم (ممكن التصفح الخاص مفعّل)، فبتختفي إذا سكّرت الصفحة.";
+    msg.hidden = false;
+    setTimeout(() => { msg.hidden = true; }, 4000);
     renderMine();
     form.reset();
     $("#rMethod").value = method;
@@ -284,12 +296,10 @@
   renderRoasters("all");
 
   /* ---------- Scanner ---------- */
-  const video = $("#scanVideo");
   const canvas = $("#scanCanvas");
   const img = $("#scanImg");
   const view = $("#scanView");
   const placeholder = $("#scanPlaceholder");
-  let stream = null;
 
   $("#sMethod").innerHTML = METHODS.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
   $("#sMethod").value = "v60";
@@ -299,55 +309,22 @@
   $("#sGrinder").value = store.get("skmscoffee.grinder", "") || "";
   $("#sGrinder").addEventListener("change", () => store.set("skmscoffee.grinder", $("#sGrinder").value));
 
-  function stopCamera() {
-    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
-    video.hidden = true;
-    $("#snapBtn").hidden = true;
-    $("#camBtn").hidden = false;
-  }
-
-  $("#camBtn").addEventListener("click", async () => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      $("#fileInput").click();
-      return;
-    }
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-      video.srcObject = stream;
-      await video.play();
-      video.hidden = false;
-      img.hidden = true;
-      placeholder.hidden = true;
-      $("#snapBtn").hidden = false;
-      $("#camBtn").hidden = true;
-    } catch (_) {
-      showScanMessage("ما قدرنا نفتح الكاميرا. ارفع صورة بدلها.");
-      $("#fileInput").click();
-    }
-  });
-
-  $("#snapBtn").addEventListener("click", () => {
-    const w = video.videoWidth, h = video.videoHeight;
-    if (!w || !h) return;
-    canvas.width = w; canvas.height = h;
-    canvas.getContext("2d").drawImage(video, 0, 0, w, h);
-    img.src = canvas.toDataURL("image/jpeg", 0.85);
-    img.hidden = false;
-    stopCamera();
-    runScan(img);
-  });
-
-  $("#fileInput").addEventListener("change", (e) => {
+  // "صوّر البن" يفتح كاميرا الجوال عبر منتقي الصور، و"ارفع صورة" يختار من المعرض
+  function onImage(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    stopCamera();
-    const url = URL.createObjectURL(file);
-    img.onload = () => { runScan(img); };
-    img.src = url;
-    img.hidden = false;
-    placeholder.hidden = true;
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => runScan(img);
+      img.src = reader.result;
+      img.hidden = false;
+      placeholder.hidden = true;
+    };
+    reader.readAsDataURL(file);
     e.target.value = "";
-  });
+  }
+  $("#camInput").addEventListener("change", onImage);
+  $("#fileInput").addEventListener("change", onImage);
 
   function showScanMessage(html) {
     const box = $("#scanResult");
@@ -365,8 +342,8 @@
   /* يقرأ ألوان منتصف الصورة (داخل الإطار) ويستبعد الخلفية الفاتحة جدًا والمحايدة. */
   function analyze(source) {
     const size = 160;
-    const sw = source.naturalWidth || source.videoWidth;
-    const sh = source.naturalHeight || source.videoHeight;
+    const sw = source.naturalWidth;
+    const sh = source.naturalHeight;
     const scale = size / Math.max(sw, sh);
     const w = Math.max(1, Math.round(sw * scale)), h = Math.max(1, Math.round(sh * scale));
     canvas.width = w; canvas.height = h;

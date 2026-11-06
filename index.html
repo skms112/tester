@@ -159,6 +159,7 @@
               <label for="rNotes">ملاحظات التذوق</label>
               <input id="rNotes" class="input" maxlength="120" placeholder="مثال: حمضية لطيفة، توت، شوكولاتة">
             </div>
+            <p id="rMsg" class="form-msg" role="status" hidden></p>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary">احفظ الوصفة</button>
               <button type="button" id="rSuggest" class="btn btn-ghost">املأ بقيم مقترحة للطريقة</button>
@@ -211,7 +212,6 @@
           <div class="card scan-step">
             <h3><span class="step-num">1</span> امسح البن</h3>
             <div class="scan-view" id="scanView">
-              <video id="scanVideo" playsinline muted hidden></video>
               <canvas id="scanCanvas" hidden></canvas>
               <img id="scanImg" alt="صورة البن الممسوحة" hidden>
               <div class="scan-frame" aria-hidden="true"><span></span></div>
@@ -221,11 +221,13 @@
               </div>
             </div>
             <div class="scan-actions">
-              <button type="button" class="btn btn-primary" id="camBtn">فتح الكاميرا</button>
-              <button type="button" class="btn btn-primary" id="snapBtn" hidden>التقط وامسح</button>
+              <label class="btn btn-primary">
+                صوّر البن
+                <input type="file" id="camInput" accept="image/*" capture="environment" hidden>
+              </label>
               <label class="btn btn-ghost">
                 ارفع صورة
-                <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+                <input type="file" id="fileInput" accept="image/*" hidden>
               </label>
             </div>
             <div id="scanResult" class="scan-result" hidden></div>
