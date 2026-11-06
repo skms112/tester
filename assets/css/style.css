@@ -511,3 +511,12 @@ a { color: var(--accent); }
 .brew-steps li.done .brew-at::before { content: "✓ "; }
 .brew-at { font-variant-numeric: tabular-nums; color: var(--ink-soft); min-width: 44px; direction: ltr; text-align: right; }
 @media (prefers-reduced-motion: reduce) { .brew-progress i { transition: none; } }
+
+/* ---------- Suggestions & products ---------- */
+.chip-biz { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.price { font-size: 20px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.place-line { font-size: 14px; color: var(--ink-soft); margin-top: 8px; }
+.owner-line { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); width: 100%; }
+.product { display: grid; align-content: start; }
+.sub-title-tight { margin-top: 0; }
+#productKindTabs { margin-bottom: 16px; }

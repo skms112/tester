@@ -107,7 +107,7 @@
   });
   $("#year").textContent = new Date().getFullYear();
 
-  const VIEWS = ["home", "method", "types", "beans", "grinders", "recipes", "farms", "roasters", "scanner", "community", "account", "profile"];
+  const VIEWS = ["home", "method", "types", "beans", "grinders", "recipes", "farms", "roasters", "scanner", "community", "account", "profile", "suggest"];
   function route() {
     const h = (location.hash || "").replace(/^#/, "");
     let view = "home", methodId = null;
@@ -123,6 +123,7 @@
     if (view === "community") renderFeed();
     if (view === "account") renderAccount();
     if (view === "profile") renderProfileView();
+    if (view === "suggest") renderSuggest();
     if (!modal.hidden && S.modal && S.modal.type !== "brew") closeModal();
     window.scrollTo(0, 0);
   }
@@ -804,6 +805,7 @@
         <div class="profile-main">
           <div class="profile-name-row">
             <h2>${esc(m.nickname || "عضو")}</h2>
+            ${isBusiness(m) ? `<span class="chip chip-biz">${esc(typeOf(m).badge)}</span>` : ""}
             ${isMe ? `<button type="button" class="btn btn-ghost btn-sm" data-acc-tab="profile">تعديل الحساب</button>
                       <button type="button" class="btn btn-ghost btn-sm" data-acc-tab="prefs">ذوقي</button>` : followBtn(uid)}
           </div>
@@ -815,6 +817,7 @@
         </div>
       </div>
       ${m.bio ? `<p class="profile-bio">${esc(m.bio)}</p>` : ""}
+      ${isBusiness(m) ? placeLine(m) : ""}
       ${prefSummaryFor(m.prefs || {}, isMe)}`;
   }
   function postGrid(uid, m) {
@@ -836,7 +839,9 @@
       <a href="#community" class="back-link">→ المجتمع</a>
       ${profileHeader(uid, m, false)}
       <h3 class="sub-title">المنشورات</h3>
-      ${postGrid(uid, m) || `<div class="empty">ما نشر شي للحين.</div>`}`;
+      ${postGrid(uid, m) || `<div class="empty">ما نشر شي للحين.</div>`}
+      ${(m.products || []).length ? `<h3 class="sub-title">${isBusiness(m) ? "المنتجات" : "رفّه: قهوته ومطاحنه"}</h3>
+        <div class="grid grid-3">${m.products.map((p) => productCard({ ...p, uid, member: m }, false)).join("")}</div>` : ""}`;
     hydrateAvatars(box);
   }
 
@@ -1018,6 +1023,240 @@
     if (!res.ok) { btn.disabled = false; btn.textContent = res.msg; }
   });
 
+  /* ================= أنواع الحسابات والمنتجات ================= */
+  const typeOf = (m) => ACCOUNT_TYPES.find((t) => t.id === ((m && m.accountType) || "person")) || ACCOUNT_TYPES[0];
+  const isBusiness = (m) => typeOf(m).id !== "person";
+  const kindName = (id) => (PRODUCT_KINDS.find((k) => k.id === id) || { name: "أخرى" }).name;
+  function safeUrl(u) {
+    try { const x = new URL(String(u || "").trim()); return x.protocol === "https:" ? x.href : ""; } catch (_) { return ""; }
+  }
+  function mapLink(m) {
+    const pl = (m && m.place) || {};
+    const direct = safeUrl(pl.mapUrl);
+    if (direct) return direct;
+    if (!pl.area && !pl.address) return "";
+    const q = [m.nickname, pl.address, pl.area, "Kuwait"].filter(Boolean).join(" ");
+    return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+  }
+  function placeLine(m) {
+    const pl = (m && m.place) || {};
+    const where = [pl.area, pl.address].filter(Boolean).join("، ");
+    const link = mapLink(m);
+    if (!where && !link) return "";
+    return `<div class="place-line">📍 ${esc(where || "الموقع")}${link ? ` · <a href="${esc(link)}" target="_blank" rel="noopener">افتح في الخرائط</a>` : ""}</div>`;
+  }
+  function allProducts(filterFn) {
+    const out = [];
+    S.members.forEach((m) => (m.products || []).forEach((p) => { const x = { ...p, uid: m.uid, member: m }; if (!filterFn || filterFn(x)) out.push(x); }));
+    return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+  function productCard(p, showOwner = true) {
+    const m = p.member || {};
+    const biz = isBusiness(m);
+    const g = p.grinderId && grinderById(p.grinderId);
+    const link = safeUrl(p.link);
+    const details = [];
+    if (p.kind === "beans") {
+      if (p.origin) details.push(["المنشأ", p.origin]);
+      if (p.process) details.push(["المعالجة", PROCESS_NAME[p.process] || p.process]);
+      if (p.roast) details.push(["التحميص", ROAST_NAME[p.roast] || p.roast]);
+    }
+    if (p.kind === "grinder" && g) details.push(["النوع", g.type === "manual" ? "يدوية" : "أوتوماتيكية"], ["الشفرات", g.burr]);
+    const mine = p.uid === S.uid;
+    return `
+      <article class="card product">
+        <div class="chips chips-top"><span class="chip">${esc(kindName(p.kind))}</span>${biz ? `<span class="chip chip-biz">${esc(typeOf(m).badge)}</span>` : `<span class="chip">من رفّ عضو</span>`}</div>
+        <h3 dir="auto" class="ltr-title">${esc(p.name)}</h3>
+        ${biz && p.price ? `<div class="price">${esc(Number(p.price).toFixed(3).replace(/\.?0+$/, ""))} د.ك</div>` : ""}
+        ${details.length ? `<dl class="specs">${details.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
+        ${p.desc ? `<p>${esc(p.desc)}</p>` : ""}
+        ${showOwner ? `
+          <button type="button" class="post-author owner-line" data-open-profile="${esc(p.uid)}">
+            ${avatarHtml(p.uid, m.nickname, "avatar-sm")}
+            <span class="grow"><b>${esc(m.nickname || "عضو")}</b><span class="muted small">${esc(typeOf(m).name)}</span></span>
+          </button>` : ""}
+        ${biz ? placeLine(m) : ""}
+        <div class="card-foot">
+          ${link ? `<a class="btn btn-ghost btn-sm" href="${esc(link)}" target="_blank" rel="noopener">زيارة الرابط ↗</a>` : ""}
+          ${mine ? `<button type="button" class="btn btn-ghost btn-sm" data-del-product="${esc(p.id)}">احذف</button>` : ""}
+        </div>
+      </article>`;
+  }
+
+  /* ---------- نموذج إضافة منتج / عنصر لرفّي ---------- */
+  function productFormHtml() {
+    const biz = isBusiness(S.profile);
+    const origins = BEANS.filter((b) => b.cat === "origin").map((b) => b.title);
+    return `
+      <form id="productForm" class="card form" autocomplete="off">
+        <h3>${biz ? "أضف منتج" : "أضف قهوتك أو مطحنتك لرفّك"}</h3>
+        <div class="field-row">
+          <div class="field"><label for="prKind">النوع</label>
+            <select id="prKind" class="input">${PRODUCT_KINDS.filter((k) => biz || k.id !== "drink").map((k) => `<option value="${k.id}">${esc(k.name)}</option>`).join("")}</select></div>
+          <div class="field" data-for-kind="grinder" hidden><label for="prGrinder">اختر المطحنة</label>
+            <select id="prGrinder" class="input"><option value="">مطحنة غير موجودة في القائمة</option>${GRINDERS.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join("")}</select></div>
+        </div>
+        <div class="field"><label for="prName">الاسم</label><input id="prName" class="input" required maxlength="80" placeholder="${biz ? "مثال: إثيوبيا غوجي مجففة 250غ" : "مثال: كولومبي من محمصتي المفضلة"}"></div>
+        <div class="field-row" data-for-kind="beans">
+          <div class="field"><label for="prOrigin">المنشأ</label><select id="prOrigin" class="input"><option value="">—</option>${origins.map((o) => `<option>${esc(o)}</option>`).join("")}<option value="خلطة">خلطة</option></select></div>
+          <div class="field"><label for="prProcess">المعالجة</label><select id="prProcess" class="input"><option value="">—</option>${["washed", "natural", "honey", "anaerobic"].map((k) => `<option value="${k}">${esc(PROCESS_NAME[k])}</option>`).join("")}</select></div>
+          <div class="field"><label for="prRoast">التحميص</label><select id="prRoast" class="input"><option value="">—</option>${Object.entries(ROAST_NAME).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>
+        </div>
+        ${biz ? `<div class="field-row">
+          <div class="field"><label for="prPrice">السعر (د.ك)</label><input id="prPrice" type="number" class="input" min="0" step="0.001" placeholder="مثال: 5.500"></div>
+          <div class="field"><label for="prLink">رابط المنتج (اختياري)</label><input id="prLink" class="input" dir="ltr" type="url" placeholder="https://"></div>
+        </div>` : `<div class="field"><label for="prLink">رابط (اختياري)</label><input id="prLink" class="input" dir="ltr" type="url" placeholder="https://"></div>`}
+        <div class="field"><label for="prDesc">وصف</label><input id="prDesc" class="input" maxlength="200" placeholder="${biz ? "نكهات، وزن، تاريخ التحميص…" : "رأيك فيها، من وين شريتها…"}"></div>
+        ${biz && !mapLink(S.profile) ? `<div class="banner">أضف موقعك من <button type="button" class="link-btn" data-acc-tab="profile">تعديل الحساب</button> عشان يظهر مع منتجاتك.</div>` : ""}
+        <button type="submit" class="btn btn-primary">${biz ? "أضف المنتج" : "أضف لرفّي"}</button>
+        <p class="form-msg" id="prMsg" role="status" hidden></p>
+      </form>`;
+  }
+  function syncProductKind() {
+    const k = $("#prKind") && $("#prKind").value;
+    document.querySelectorAll("#productForm [data-for-kind]").forEach((el) => { el.hidden = el.dataset.forKind !== k; });
+  }
+  document.addEventListener("change", (e) => {
+    if (e.target.id === "prKind") syncProductKind();
+    if (e.target.id === "prGrinder") { const g = grinderById(e.target.value); if (g) $("#prName").value = g.name; }
+  });
+  document.addEventListener("submit", async (e) => {
+    if (e.target.id !== "productForm") return;
+    e.preventDefault();
+    const msg = $("#prMsg");
+    const kind = $("#prKind").value;
+    const linkRaw = $("#prLink").value.trim();
+    if (linkRaw && !safeUrl(linkRaw)) { showMsg(msg, "الرابط لازم يبدأ بـ https://", true); return; }
+    const item = {
+      id: uid8(), createdAt: Date.now(), kind, name: $("#prName").value.trim(),
+      origin: kind === "beans" ? $("#prOrigin").value : "", process: kind === "beans" ? $("#prProcess").value : "", roast: kind === "beans" ? $("#prRoast").value : "",
+      grinderId: kind === "grinder" ? $("#prGrinder").value : "",
+      price: $("#prPrice") ? (parseFloat($("#prPrice").value) || 0) : 0,
+      link: safeUrl(linkRaw), desc: $("#prDesc").value.trim()
+    };
+    if (!item.name) return;
+    const res = await saveProducts([item, ...((S.profile && S.profile.products) || [])].slice(0, 60));
+    if (!res.ok) { showMsg(msg, res.msg, true); return; }
+    renderAccount();
+  });
+  document.addEventListener("click", async (e) => {
+    const d = e.target.closest("[data-del-product]");
+    if (!d) return;
+    if (d.dataset.confirm !== "1") { d.dataset.confirm = "1"; d.textContent = "متأكد؟"; return; }
+    const res = await saveProducts(((S.profile && S.profile.products) || []).filter((p) => p.id !== d.dataset.delProduct));
+    if (!res.ok) d.textContent = res.msg;
+  });
+  async function saveProducts(list) {
+    if (S.mode === "cloud") return updateMine({ products: list });
+    if (!S.profile) return { ok: false, msg: "أنشئ حسابك أول." };
+    S.profile = { ...S.profile, products: list };
+    if (!local.set(LOCAL_PROFILE, S.profile)) return { ok: false, msg: "المتصفح ما سمح بالحفظ." };
+    return { ok: true };
+  }
+  function myProductsPane() {
+    const mine = ((S.profile && S.profile.products) || []).map((p) => ({ ...p, uid: S.uid || "local", member: { uid: S.uid, ...S.profile } }));
+    return `
+      <div class="create-layout">
+        ${productFormHtml()}
+        <div>
+          <h3 class="sub-title sub-title-tight">${isBusiness(S.profile) ? "منتجاتي" : "رفّي"} (${mine.length})</h3>
+          ${mine.length ? `<div class="stack">${mine.map((p) => productCard(p, false)).join("")}</div>` : `<div class="empty">${isBusiness(S.profile) ? "ما أضفت منتجات للحين." : "أضف البن اللي تشربه والمطاحن اللي عندك."}</div>`}
+        </div>
+      </div>`;
+  }
+
+  /* ================= صفحة المقترحات ================= */
+  let suggestTab = "foryou";
+  let productKind = "all";
+  makeTabs($("#suggestTabs"), [
+    { id: "foryou", name: "مقترح لك" }, { id: "places", name: "أماكن شراء البن" },
+    { id: "online", name: "متاجر أونلاين" }, { id: "market", name: "منتجات الأعضاء" }
+  ], (id) => { suggestTab = id; renderSuggest(); });
+
+  function renderSuggest() {
+    const box = $("#suggestView");
+    if (!box) return;
+    const cloud = S.mode === "cloud";
+    if (suggestTab === "online") {
+      const group = (kind, title) => `
+        <h3 class="sub-title">${title}</h3>
+        <div class="grid grid-3">${ONLINE_STORES.filter((s) => s.kind === kind).map((s) => `
+          <article class="card">
+            <h3 dir="ltr" class="ltr-title">${esc(s.name)}</h3>
+            <p>${esc(s.desc)}</p>
+            <div class="card-foot"><a class="btn btn-ghost btn-sm" href="${esc(s.url)}" target="_blank" rel="noopener">افتح المتجر ↗</a></div>
+          </article>`).join("")}</div>`;
+      box.innerHTML = group("specialty", "قهوة مختصة") + group("general", "متاجر عامة") +
+        `<p class="note">المعلومات من مواقع المتاجر نفسها. تأكد من التوصيل والأسعار عند الطلب.</p>`;
+      return;
+    }
+    if (suggestTab === "places") {
+      const biz = S.members.filter((m) => m.nickname && isBusiness(m));
+      box.innerHTML = `
+        <h3 class="sub-title">محلات وكافيهات مسجّلة في المنصة</h3>
+        ${!cloud ? `<div class="empty">تظهر هنا الحسابات التجارية لما تفتح المنصة من رابطها على claude.ai.</div>`
+          : biz.length ? `<div class="grid grid-3">${biz.map((m) => `
+            <article class="card">
+              <button type="button" class="post-author" data-open-profile="${esc(m.uid)}">
+                ${avatarHtml(m.uid, m.nickname)}
+                <span class="grow"><b>${esc(m.nickname)}</b><span class="muted small">${esc(typeOf(m).name)} · ${(m.products || []).length} منتج</span></span>
+              </button>
+              ${m.bio ? `<p>${esc(m.bio)}</p>` : ""}
+              ${placeLine(m)}
+            </article>`).join("")}</div>`
+          : `<div class="empty">ما في حسابات تجارية للحين. إذا عندك كافيه أو محمصة أو محل معدات، غيّر نوع حسابك من <a href="#account">حسابي ← تعديل الحساب</a>.</div>`}
+        <h3 class="sub-title">محامص الكويت</h3>
+        <div class="grid grid-3">${ROASTERS.filter((r) => r.status !== "unknown").map((r) => `
+          <article class="card">
+            <h3 dir="auto" class="ltr-title">${esc(r.name)}</h3>
+            <div class="place-line">📍 ${esc(r.address || r.area)} · <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.q)}" target="_blank" rel="noopener">افتح في الخرائط</a></div>
+          </article>`).join("")}</div>
+        <p><a href="#roasters">كل المحامص مع المصادر</a></p>`;
+      hydrateAvatars(box);
+      return;
+    }
+    if (suggestTab === "market") {
+      const kinds = [{ id: "all", name: "الكل" }, { id: "biz", name: "للبيع من المحلات" }, ...PRODUCT_KINDS];
+      const list = allProducts((p) => productKind === "all" || (productKind === "biz" ? isBusiness(p.member) : p.kind === productKind));
+      box.innerHTML = `
+        <div class="tabs" id="productKindTabs">${kinds.map((k) => `<button type="button" class="tab" data-pkind="${k.id}" aria-selected="${productKind === k.id}">${esc(k.name)}</button>`).join("")}</div>
+        ${!cloud ? `<div class="empty">منتجات الأعضاء تظهر لما تفتح المنصة من رابطها على claude.ai.</div>`
+          : list.length ? `<div class="grid grid-3">${list.map((p) => productCard(p)).join("")}</div>`
+          : `<div class="empty">ما في منتجات هنا للحين. أضف قهوتك أو مطحنتك أو منتجاتك من <a href="#account">حسابي</a>.</div>`}`;
+      hydrateAvatars(box);
+      return;
+    }
+    // مقترح لك
+    const pr = prefs();
+    const favM = myList("methods");
+    const hasPrefs = Object.values(pr).some((v) => Array.isArray(v) && v.length);
+    const famous = RECIPES.map((r, i) => ({ ...r, _ref: "f:" + i })).filter((r) => !favM.length || favM.includes(r.method)).slice(0, 4);
+    const commRecipes = communityPosts((p) => p.type === "recipe" && p.uid !== S.uid && (!favM.length || favM.includes(p.method)))
+      .sort((a, b) => likeCount(postKey(b.uid, b.id)) - likeCount(postKey(a.uid, a.id))).slice(0, 9);
+    const beans = allProducts((p) => p.kind === "beans" && p.uid !== S.uid &&
+      ((myList("origins").includes(p.origin)) || myList("roasts").includes(p.roast) || myList("processes").some((x) => PROCESS_NAME[p.process] === x || p.process === x)));
+    const gCount = {};
+    S.members.forEach((m) => ((m.prefs && m.prefs.grinders) || []).forEach((id) => { gCount[id] = (gCount[id] || 0) + 1; }));
+    const popular = Object.entries(gCount).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    box.innerHTML = `
+      ${!hasPrefs ? `<div class="banner">اختر ذوقك من <a href="#account" data-goto-prefs-link>حسابي ← ذوقي</a> عشان تصير المقترحات على مقاسك. الحين نعرض لك الأشهر.</div>` : ""}
+      <h3 class="sub-title">وصفات مشهورة ${favM.length ? "لطرقك" : ""}</h3>
+      <div class="grid grid-2">${famous.map((r) => recipeCard(r)).join("")}</div>
+      <h3 class="sub-title">الأكثر إعجابًا من المجتمع</h3>
+      ${!cloud ? `<div class="empty">تظهر لما تفتح المنصة من رابطها على claude.ai.</div>`
+        : commRecipes.length ? `<div class="post-grid">${commRecipes.map((p) => { const key = postKey(p.uid, p.id); const n = likeCount(key); return `<button type="button" class="tile" data-open-post="${esc(key)}">${postArt(p)}${n ? `<span class="tile-likes">♥ ${n}</span>` : ""}</button>`; }).join("")}</div>`
+        : `<div class="empty">ما في وصفات من الأعضاء ${favM.length ? "لطرقك " : ""}للحين.</div>`}
+      ${cloud && hasPrefs ? `<h3 class="sub-title">بن يناسب ذوقك</h3>
+        ${beans.length ? `<div class="grid grid-3">${beans.slice(0, 6).map((p) => productCard(p)).join("")}</div>` : `<div class="empty">ما لقينا بن من الأعضاء يطابق المناشئ أو التحميص اللي اخترتها للحين.</div>`}` : ""}
+      ${cloud && popular.length ? `<h3 class="sub-title">المطاحن الأكثر استخدامًا بين الأعضاء</h3>
+        <div class="people">${popular.map(([id, n]) => { const g = grinderById(id); return g ? `<div class="person"><span class="grow"><b dir="ltr">${esc(g.name)}</b><span class="muted small"> · ${g.type === "manual" ? "يدوية" : "أوتوماتيكية"}</span></span><span class="chip">${n} عضو</span></div>` : ""; }).join("")}</div>` : ""}`;
+  }
+  document.addEventListener("click", (e) => {
+    const k = e.target.closest("[data-pkind]");
+    if (k) { productKind = k.dataset.pkind; renderSuggest(); }
+    if (e.target.closest("[data-goto-prefs-link]")) { S.accountTab = "prefs"; }
+  });
+
   /* ================= صفحة المجتمع ================= */
   let feedType = "all";
   makeTabs($("#feedTypeTabs"), [{ id: "all", name: "الكل" }, { id: "following", name: "المتابَعين" }, { id: "mine", name: "يناسب ذوقي" }, { id: "recipe", name: "الوصفات" }, { id: "scan", name: "نتائج السكانر" }, { id: "members", name: "الأعضاء" }], (id) => { feedType = id; renderFeed(); });
@@ -1135,7 +1374,7 @@
     const p = S.profile;
     const inboxN = recsToMe().length;
     const unseen = unseenRecs();
-    const TABS = [["posts", "المنشورات"], ["recipes", `وصفاتي الخاصة (${S.myRecipes.length})`], ["inbox", `الترشيحات${unseen ? ` <span class="badge">${unseen}</span>` : inboxN ? ` (${inboxN})` : ""}`], ["create", "ابتكر وصفة"], ["prefs", "ذوقي"], ["profile", "تعديل الحساب"]];
+    const TABS = [["posts", "المنشورات"], ["recipes", `وصفاتي الخاصة (${S.myRecipes.length})`], ["inbox", `الترشيحات${unseen ? ` <span class="badge">${unseen}</span>` : inboxN ? ` (${inboxN})` : ""}`], ["products", isBusiness(p) ? `منتجاتي (${(p.products || []).length})` : `رفّي (${(p.products || []).length})`], ["create", "ابتكر وصفة"], ["prefs", "ذوقي"], ["profile", "تعديل الحساب"]];
     box.innerHTML = `
       ${localBanner}
       ${S.backend === "firebase" && S.me && !S.me.emailVerified ? `<div class="banner">أرسلنا رابط تأكيد على إيميلك. أكّد إيميلك عشان تحمي حسابك. <button type="button" class="link-btn" data-resend-verify>أرسل الرابط مرة ثانية</button></div>` : ""}
@@ -1251,6 +1490,20 @@
         <input id="pNick" class="input" required maxlength="30" value="${esc(p.nickname || "")}" placeholder="مثال: أبو سعود">
       </div>
       <div class="field">
+        <label for="pType">نوع الحساب</label>
+        <select id="pType" class="input">${ACCOUNT_TYPES.map((t) => `<option value="${t.id}"${(p.accountType || "person") === t.id ? " selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
+        <small class="hint">الكافيهات والمحامص ومحلات المعدات تقدر تضيف منتجاتها مع الأسعار وتربطها بموقعها.</small>
+      </div>
+      <fieldset class="pours" id="placeFields"${(p.accountType || "person") === "person" ? " hidden" : ""}>
+        <legend>الموقع</legend>
+        <div class="field-row">
+          <div class="field"><label for="pArea">المنطقة</label><input id="pArea" class="input" maxlength="40" value="${esc((p.place && p.place.area) || "")}" placeholder="مثال: الشويخ الصناعية"></div>
+          <div class="field"><label for="pAddress">العنوان</label><input id="pAddress" class="input" maxlength="80" value="${esc((p.place && p.place.address) || "")}" placeholder="قطعة، شارع، مبنى"></div>
+        </div>
+        <div class="field"><label for="pMap">رابط الموقع في خرائط Google (اختياري)</label><input id="pMap" class="input" dir="ltr" type="url" maxlength="300" value="${esc((p.place && p.place.mapUrl) || "")}" placeholder="https://maps.app.goo.gl/…"></div>
+        <small class="hint">إذا ما حطيت رابط، نسوي بحث في الخرائط باسم حسابك والمنطقة.</small>
+      </fieldset>
+      <div class="field">
         <label for="pBio">نبذة عنك (اختياري)</label>
         <input id="pBio" class="input" maxlength="120" value="${esc(p.bio || "")}" placeholder="مثال: أحب الإثيوبي المغسول على V60">
       </div>`;
@@ -1304,11 +1557,15 @@
       el.textContent = n ? `(${n})` : "";
     });
   }
-  document.addEventListener("change", (e) => { if (e.target.closest("#prefsForm")) updatePickCounts(); });
+  document.addEventListener("change", (e) => {
+    if (e.target.closest("#prefsForm")) updatePickCounts();
+    if (e.target.id === "pType") $("#placeFields").hidden = e.target.value === "person";
+  });
 
   function renderAccountPane() {
     const pane = $("#accountPane");
     if (S.accountTab === "prefs") { pane.innerHTML = prefsFormHtml(); updatePickCounts(); return; }
+    if (S.accountTab === "products") { pane.innerHTML = myProductsPane(); syncProductKind(); hydrateAvatars(pane); return; }
     if (S.accountTab === "posts") {
       if (S.mode !== "cloud") {
         pane.innerHTML = S.myRecipes.length
@@ -1503,7 +1760,11 @@
       const nickname = $("#pNick").value.trim();
       if (!nickname) return;
       const isNew = !S.profile || !S.profile.nickname;
-      const res = await saveProfile({ nickname, bio: $("#pBio").value.trim() });
+      const accountType = $("#pType").value;
+      const mapRaw = $("#pMap").value.trim();
+      if (mapRaw && !safeUrl(mapRaw)) { showMsg($("#profileMsg"), "رابط الخرائط لازم يبدأ بـ https://", true); return; }
+      const place = accountType === "person" ? null : { area: $("#pArea").value.trim(), address: $("#pAddress").value.trim(), mapUrl: safeUrl(mapRaw) };
+      const res = await saveProfile({ nickname, bio: $("#pBio").value.trim(), accountType, place });
       if (res.ok) { S.accountTab = isNew ? "prefs" : "recipes"; S.onboarding = isNew; renderAccount(); }
       else showMsg($("#profileMsg"), res.msg, true);
     }
@@ -1687,6 +1948,7 @@
     if (S.view === "method") renderMethod();
     if (S.view === "account" && !document.activeElement?.closest("#accountView form")) renderAccount();
     if (S.view === "profile") renderProfileView();
+    if (S.view === "suggest") renderSuggest();
     if (!document.activeElement?.closest("#modalBody form")) refreshModal();
     updateNav();
   }

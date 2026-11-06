@@ -371,3 +371,32 @@ const RECIPE_POURS = {
     { at: 0, to: 40, label: "بلوم: 40غ" }, { at: 45, to: 120, label: "صب حتى 120غ" }, { at: 75, to: 190, label: "صب حتى 190غ" }] }
 };
 RECIPES.forEach((r) => { const p = RECIPE_POURS[r.title]; if (p) { r.pours = p.pours; r.brewEnd = p.end; } });
+
+/* ---------- متاجر أونلاين توصّل للكويت ----------
+ * المعلومات من مواقع المتاجر نفسها كما ظهرت في نتائج البحث (نوفمبر 2026). الأسعار ما انكتبت لأنها تتغير.
+ */
+const ONLINE_STORES = [
+  { name: "PERCUP", url: "https://percup.com/collections/coffee-kuwait", kind: "specialty", desc: "متجر أونلاين يجمع أكثر من 40 محمصة مختصة وأكثر من 300 قهوة، حبوب ومطحونة وكبسولات وأكياس تقطير. يذكر التوصيل داخل الكويت خلال 48 ساعة." },
+  { name: "Roots Roastery", url: "https://rootsroastery.net/en/", kind: "specialty", desc: "محمصة كويتية بقهوة أحادية المنشأ (إثيوبيا، كولومبيا، اليمن). يذكر الموقع توصيل بنفس اليوم للطلبات قبل 7 مساءً، وعندها محل في الشويخ." },
+  { name: "The Finjan Society", url: "https://thefinjansociety.com/", kind: "specialty", desc: "قهوة مختصة مختارة ودفعات محدودة، ويذكر الموقع شحن سريع داخل الكويت." },
+  { name: "Cofea", url: "https://cofea.com/", kind: "specialty", desc: "متجر كويتي للقهوة المختصة يبيع بن محمّص طازج وأدوات تحضير، ويذكر توصيل مجاني فوق حد معيّن." },
+  { name: "Stockroom Coffee", url: "https://stockroomcoffee.com/", kind: "specialty", desc: "محمصة وبيع بالجملة، وتبيع أكياس 250غ للأفراد مع شحن مجاني فوق حد معيّن." },
+  { name: "Tavola", url: "https://www.tavolashop.com/kw-en/tea-coffee/coffee/coffee-beans-capsules", kind: "general", desc: "متجر أدوات مطبخ يبيع بن وكبسولات من علامات تجارية معروفة وأدوات تحضير." },
+  { name: "noon (الكويت)", url: "https://www.noon.com/kuwait-en/grocery-store/beverages-16314/coffee/whole-coffee-beans/category/", kind: "general", desc: "سوق إلكتروني فيه حبوب قهوة من علامات تجارية عامة." }
+];
+ROASTERS.push({ name: "Roots Roastery", area: "الشويخ", address: null, status: "area", desc: "محمصة قهوة مختصة كويتية بقهوة أحادية المنشأ، وتوصّل أونلاين.", source: "موقع Roots Roastery.", q: "Roots Roastery Kuwait" });
+
+/* ---------- أنواع الحسابات والمنتجات ---------- */
+const ACCOUNT_TYPES = [
+  { id: "person", name: "فرد", badge: "" },
+  { id: "cafe", name: "كافيه", badge: "☕ كافيه" },
+  { id: "roaster", name: "محمصة", badge: "🔥 محمصة" },
+  { id: "shop", name: "محل معدات وأدوات", badge: "🛠 محل معدات" }
+];
+const PRODUCT_KINDS = [
+  { id: "beans", name: "بن" },
+  { id: "grinder", name: "مطحنة" },
+  { id: "gear", name: "أداة تحضير" },
+  { id: "drink", name: "مشروب" },
+  { id: "other", name: "أخرى" }
+];
