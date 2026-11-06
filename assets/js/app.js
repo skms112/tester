@@ -73,7 +73,7 @@
     members: [],          // [{uid, nickname, bio, method, joined, posts:[]}]
     feedLoaded: false, feedNote: "",
     view: "home", methodId: null,
-    accountTab: "recipes",
+    accountTab: "posts",
     backend: "local",     // "claude" | "firebase" | "local"
     auth: null, authMode: "signup",
     lastScan: null,
@@ -107,7 +107,7 @@
   });
   $("#year").textContent = new Date().getFullYear();
 
-  const VIEWS = ["home", "method", "types", "beans", "grinders", "recipes", "farms", "roasters", "scanner", "community", "account"];
+  const VIEWS = ["home", "method", "types", "beans", "grinders", "recipes", "farms", "roasters", "scanner", "community", "account", "profile"];
   function route() {
     const h = (location.hash || "").replace(/^#/, "");
     let view = "home", methodId = null;
@@ -122,6 +122,8 @@
     if (view === "method") renderMethod();
     if (view === "community") renderFeed();
     if (view === "account") renderAccount();
+    if (view === "profile") renderProfileView();
+    if (!modal.hidden && S.modal && S.modal.type !== "brew") closeModal();
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);
@@ -151,7 +153,7 @@
   }
   function communityPosts(filterFn) {
     const out = [];
-    S.members.forEach((mem) => (mem.posts || []).forEach((p) => { if (!filterFn || filterFn(p)) out.push({ ...p, uid: mem.uid, member: mem }); }));
+    S.members.forEach((mem) => (mem.posts || []).forEach((p) => { const x = { ...p, uid: mem.uid, member: mem }; if (!filterFn || filterFn(x)) out.push(x); }));
     return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }
 
@@ -159,7 +161,7 @@
     const m = methodById(S.methodId);
     if (!m) return;
     const info = grindInfo((m.min + m.max) / 2);
-    const recipes = RECIPES.filter((r) => r.method === m.id);
+    const recipes = RECIPES.map((r, i) => ({ ...r, _ref: "f:" + i })).filter((r) => r.method === m.id);
     const owned = myList("grinders");
     const grinders = grindersFor(m).sort((x, y) => (owned.includes(y.id) ? 1 : 0) - (owned.includes(x.id) ? 1 : 0));
     const drinks = m.id === "espresso" ? SPECIALTY_TYPES.filter((t) => t.cat === "espresso") : [];
@@ -276,6 +278,7 @@
         <div class="chips chips-top"><a class="chip chip-link" href="#m-${esc(r.method)}">${esc(m ? m.name : r.method)}</a></div>
         <h3>${esc(r.title)}</h3>
         ${r.author ? `<div class="recipe-author">${esc(r.author)}</div>` : ""}
+        ${r.idea ? `<p class="caption"><b>فكرة التحضير:</b> ${esc(r.idea)}</p>` : ""}
         <div class="recipe-params">
           <div><small>البن</small><b>${esc(num(r.dose))}</b></div>
           <div><small>${r.method === "espresso" ? "المُخرج" : "الماء"}</small><b>${esc(num(r.water))}</b></div>
@@ -287,11 +290,12 @@
         ${r.steps && r.steps.length ? `<ol class="recipe-steps">${r.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
         ${r.grinder && grinderById(r.grinder) ? `<p class="small"><b>المطحنة:</b> <span dir="ltr">${esc(grinderById(r.grinder).name)}</span>${r.clicks ? ` · ${esc(r.clicks)}` : ""}</p>` : ""}
         ${r.notes ? `<p><b>التذوق:</b> ${esc(r.notes)}</p>` : ""}
+        ${r.pours && r.pours.length && r._ref ? `<div class="card-foot"><button type="button" class="btn btn-primary btn-sm" data-brew="${esc(r._ref)}">▶ ابدأ التحضير بالمؤقت</button><span class="muted small">⏱ ${r.pours.filter((x) => x.to != null).length} صبّات</span></div>` : ""}
         ${extra}
       </article>`;
   }
   function renderRecipes(cat) {
-    $("#recipeGrid").innerHTML = RECIPES.filter((r) => cat === "all" || r.cat === cat).map((r) => recipeCard(r)).join("");
+    $("#recipeGrid").innerHTML = RECIPES.map((r, i) => ({ ...r, _ref: "f:" + i })).filter((r) => cat === "all" || r.cat === cat).map((r) => recipeCard(r)).join("");
   }
   makeTabs($("#recipeTabs"), RECIPE_CATS, renderRecipes);
   renderRecipes("all");
@@ -570,53 +574,439 @@
     msg.innerHTML = res.ok ? `تم النشر ✓ <a href="#community">افتح المجتمع</a>` : res.msg;
   });
 
-  /* ================= بطاقات المجتمع ================= */
-  function authorHead(p) {
-    const mem = p.member || {};
-    const mine = p.uid === S.uid;
+  /* ================= التواصل: متابعة، إعجاب، ترشيح ================= */
+  const METHOD_HUE = { turkish: 18, espresso: 12, moka: 32, aeropress: 205, v60: 26, flat: 42, chemex: 185, siphon: 262, french: 348, coldbrew: 215 };
+  const postKey = (uid, id) => `${uid}:${id}`;
+  const memberById = (uid) => (uid === S.uid && S.profile ? { uid, ...S.profile } : S.members.find((m) => m.uid === uid));
+  const followingOf = (uid) => { const m = memberById(uid); return (m && Array.isArray(m.following)) ? m.following : []; };
+  const followersOf = (uid) => S.members.filter((m) => m.uid !== uid && (m.following || []).includes(uid)).map((m) => m.uid);
+  const amFollowing = (uid) => followingOf(S.uid).includes(uid);
+  const likeCount = (key) => S.members.filter((m) => (m.likes || []).includes(key)).length;
+  const likedByMe = (key) => ((S.profile && S.profile.likes) || []).includes(key);
+  function findPost(key) {
+    const i = key.indexOf(":");
+    const uid = key.slice(0, i), id = key.slice(i + 1);
+    const m = memberById(uid);
+    const post = m && (m.posts || []).find((p) => p.id === id);
+    return post ? { ...post, uid, member: m } : null;
+  }
+  function recsToMe() {
+    if (!S.uid) return [];
+    const out = [];
+    S.members.forEach((m) => (m.recs || []).forEach((r) => { if (r.to === S.uid && m.uid !== S.uid) out.push({ ...r, from: m.uid }); }));
+    return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+  const seenKey = () => "skmscoffee.recsSeen." + (S.uid || "");
+  const unseenRecs = () => { const t = local.get(seenKey(), 0) || 0; return recsToMe().filter((r) => (r.createdAt || 0) > t).length; };
+
+  function canSocial() {
+    if (S.mode !== "cloud") return { ok: false, msg: "المتابعة والإعجاب والترشيح تحتاج حساب على المنصة." };
+    if (!S.uid) return { ok: false, msg: `سجّل دخول أول. <a href="#account">حسابي</a>` };
+    if (!S.profile || !S.profile.nickname) return { ok: false, msg: `أنشئ حسابك أول. <a href="#account">حسابي</a>` };
+    return { ok: true };
+  }
+  async function updateMine(patch) {
+    const c = canSocial(); if (!c.ok) return c;
+    try { await writeMemberDoc({ ...S.profile, ...patch }); } catch (e) { return { ok: false, msg: errMsg(e) }; }
+    rerenderLive();
+    return { ok: true };
+  }
+  function toggleFollow(uid) {
+    if (uid === S.uid) return Promise.resolve({ ok: false });
+    const cur = (S.profile && S.profile.following) || [];
+    const next = cur.includes(uid) ? cur.filter((x) => x !== uid) : [uid, ...cur].slice(0, 500);
+    return updateMine({ following: next });
+  }
+  function toggleLike(key) {
+    const cur = (S.profile && S.profile.likes) || [];
+    const next = cur.includes(key) ? cur.filter((x) => x !== key) : [key, ...cur].slice(0, 1000);
+    return updateMine({ likes: next });
+  }
+  function recommend(toList, key, note) {
+    const cur = (S.profile && S.profile.recs) || [];
+    const now = Date.now();
+    const add = toList.map((to) => ({ id: uid8(), to, post: key, note, createdAt: now }));
+    return updateMine({ recs: [...add, ...cur].slice(0, 100) });
+  }
+
+  /* ---------- الصورة الرمزية (حرف أول، وصورة الحساب إذا متوفرة) ---------- */
+  function avatarHtml(uid, name, cls = "") {
+    const letter = esc((name || "؟").trim().slice(0, 1) || "؟");
+    return `<span class="avatar avatar-letter ${cls}" aria-hidden="true">${letter}<img data-avatar="${esc(uid)}" alt="" hidden></span>`;
+  }
+  async function hydrateAvatars(root) {
+    if (!S.user || !root) return;
+    const imgs = [...root.querySelectorAll("img[data-avatar]")];
+    if (!imgs.length) return;
+    const ps = await S.user.profiles([...new Set(imgs.map((i) => i.dataset.avatar))]);
+    imgs.forEach((i) => {
+      const p = ps[i.dataset.avatar];
+      if (p && p.avatarUrl && !p.avatarUrl.startsWith("data:")) { i.src = p.avatarUrl; i.hidden = false; }
+    });
+  }
+
+  /* ---------- صورة المنشور ---------- */
+  function postArt(p, big) {
+    const r = p.type === "recipe" ? (p.recipe || {}) : null;
+    const hue = p.type === "scan" ? 140 : (METHOD_HUE[p.method] ?? 26);
+    const m = methodById(p.method);
+    const title = r ? r.title : (p.bean || "نتيجة سكانر");
+    const sub = r ? (m ? m.name : "") : `سكانر · ${p.grind || ""}`;
     return `
-      <div class="post-head">
-        <img class="avatar avatar-sm" data-avatar="${esc(p.uid)}" alt="">
-        <div class="grow">
-          <b>${esc(mem.nickname || "عضو")}</b>${mine ? ` <span class="chip chip-me">أنت</span>` : ""}
-          <div class="muted small">${esc(fmtDate(p.createdAt))}</div>
-        </div>
-        <span class="chip">${p.type === "scan" ? "نتيجة سكانر" : "وصفة"}</span>
+      <div class="post-art${big ? " post-art-big" : ""}" style="--h:${hue}">
+        <span class="post-art-icon">${icon(p.method, big ? 64 : 34)}</span>
+        <b>${esc(title)}</b>
+        <small>${esc(sub)}</small>
+        ${r && r.pours && r.pours.length ? `<span class="post-art-tag">⏱ ${r.pours.filter((x) => x.to != null).length} صبّات</span>` : ""}
       </div>`;
   }
-  function postActions(p) {
-    const canDelete = p.uid === S.uid || S.isOwner;
-    return canDelete ? `<div class="card-foot"><button type="button" class="btn btn-ghost btn-sm" data-del-post="${esc(p.id)}" data-post-uid="${esc(p.uid)}">${p.uid === S.uid ? "احذف منشوري" : "إزالة (إدارة)"}</button></div>` : "";
+
+  function postHead(p) {
+    const mem = p.member || {};
+    const canDelete = p.uid === S.uid || (S.isOwner && S.backend === "claude");
+    return `
+      <div class="post-head">
+        <button type="button" class="post-author" data-open-profile="${esc(p.uid)}">
+          ${avatarHtml(p.uid, mem.nickname, "avatar-sm")}
+          <span class="grow"><b>${esc(mem.nickname || "عضو")}</b><span class="muted small">${esc(fmtDate(p.createdAt))}</span></span>
+        </button>
+        <span class="chip">${p.type === "scan" ? "نتيجة سكانر" : "وصفة"}</span>
+        ${canDelete ? `<button type="button" class="icon-btn" data-del-post="${esc(p.id)}" data-post-uid="${esc(p.uid)}" title="${p.uid === S.uid ? "احذف منشوري" : "إزالة (إدارة)"}" aria-label="حذف">🗑</button>` : ""}
+      </div>`;
   }
+  function postActionsBar(p) {
+    const key = postKey(p.uid, p.id);
+    const liked = likedByMe(key);
+    const n = likeCount(key);
+    const r = p.type === "recipe" ? p.recipe : null;
+    return `
+      <div class="post-actions">
+        <button type="button" class="icon-btn${liked ? " liked" : ""}" data-like="${esc(key)}" aria-pressed="${liked}" aria-label="إعجاب">${liked ? "♥" : "♡"}</button>
+        <button type="button" class="icon-btn" data-recommend="${esc(key)}" aria-label="رشّح لصديق">↗</button>
+        ${r && r.pours && r.pours.length ? `<button type="button" class="btn btn-primary btn-sm" data-brew="p:${esc(key)}">▶ حضّرها</button>` : ""}
+        <span class="grow"></span>
+        <span class="muted small">${n ? `${n} إعجاب` : ""}</span>
+      </div>`;
+  }
+  function postCaption(p) {
+    const mem = p.member || {};
+    const text = p.type === "recipe" ? ((p.recipe && p.recipe.idea) || "") : (p.note || "");
+    return text ? `<p class="caption"><b>${esc(mem.nickname || "عضو")}</b> ${esc(text)}</p>` : "";
+  }
+  // بطاقة منشور في الخلاصة (أسلوب إنستغرام)
   function postCard(p) {
-    if (p.type === "recipe") return recipeCard(p.recipe || {}, postActions(p), authorHead(p));
+    const key = postKey(p.uid, p.id);
+    return `
+      <article class="card post">
+        ${postHead(p)}
+        <button type="button" class="post-art-btn" data-open-post="${esc(key)}" aria-label="افتح المنشور">${postArt(p, true)}</button>
+        ${postActionsBar(p)}
+        ${postCaption(p)}
+        <button type="button" class="link-btn small" data-open-post="${esc(key)}">${p.type === "recipe" ? "عرض الوصفة كاملة" : "عرض النتيجة"}</button>
+      </article>`;
+  }
+  function scanDetails(p) {
     const m = methodById(p.method);
     const g = grinderById(p.grinder);
     return `
-      <article class="card">
-        ${authorHead(p)}
-        <div class="chips chips-top"><a class="chip chip-link" href="#m-${esc(p.method)}">${esc(m ? m.name : p.method)}</a></div>
-        <h3>${esc(p.bean || "نتيجة سكانر")}</h3>
-        <div class="recipe-params">
-          <div><small>الطحنة</small><b>${esc(p.grind)}</b></div>
-          <div><small>الحبيبات</small><b>${Number(p.lo) || 0} – ${Number(p.hi) || 0}μ</b></div>
-          <div><small>التحميص</small><b>${esc(ROAST_NAME[p.roast] || "—")}</b></div>
-          <div><small>المعالجة</small><b>${esc(PROCESS_NAME[p.process] || "—")}</b></div>
-          <div><small>المطحنة</small><b dir="ltr">${esc(g ? g.name : "—")}</b></div>
-          <div><small>النقرات</small><b>${esc(p.clicks || "—")}</b></div>
-        </div>
-        ${p.note ? `<p>${esc(p.note)}</p>` : ""}
-        ${postActions(p)}
-      </article>`;
+      <div class="chips chips-top"><a class="chip chip-link" href="#m-${esc(p.method)}">${esc(m ? m.name : p.method)}</a></div>
+      <div class="recipe-params">
+        <div><small>الطحنة</small><b>${esc(p.grind)}</b></div>
+        <div><small>الحبيبات</small><b>${Number(p.lo) || 0} – ${Number(p.hi) || 0}μ</b></div>
+        <div><small>التحميص</small><b>${esc(ROAST_NAME[p.roast] || "—")}</b></div>
+        <div><small>المعالجة</small><b>${esc(PROCESS_NAME[p.process] || "—")}</b></div>
+        <div><small>المطحنة</small><b dir="ltr">${esc(g ? g.name : "—")}</b></div>
+        <div><small>النقرات</small><b>${esc(p.clicks || "—")}</b></div>
+      </div>`;
   }
 
-  async function hydrateAvatars(root) {
-    const imgs = [...root.querySelectorAll("img[data-avatar]")];
-    if (!imgs.length) return;
-    if (!S.user) { imgs.forEach((i) => { i.hidden = true; }); return; }
-    const ids = [...new Set(imgs.map((i) => i.dataset.avatar))];
-    const ps = await S.user.profiles(ids);
-    imgs.forEach((i) => { const p = ps[i.dataset.avatar]; if (p) i.src = p.avatarUrl; });
+  /* ---------- النافذة المنبثقة ---------- */
+  const modal = document.createElement("div");
+  modal.className = "modal"; modal.hidden = true;
+  modal.innerHTML = `<div class="modal-box" role="dialog" aria-modal="true" aria-label="تفاصيل"><button type="button" class="modal-close" aria-label="إغلاق">×</button><div id="modalBody"></div></div>`;
+  document.body.appendChild(modal);
+  function openModal(html, state) {
+    $("#modalBody").innerHTML = html;
+    S.modal = state || { type: "static" };
+    modal.hidden = false;
+    document.documentElement.classList.add("modal-open");
+    hydrateAvatars($("#modalBody"));
+    const f = modal.querySelector(".modal-close"); if (f) f.focus();
+  }
+  function closeModal() {
+    if (S.modal && S.modal.type === "brew") stopBrew();
+    modal.hidden = true; S.modal = null;
+    document.documentElement.classList.remove("modal-open");
+  }
+  modal.addEventListener("click", (e) => { if (e.target === modal || e.target.closest(".modal-close")) closeModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
+
+  function postModalHtml(key) {
+    const p = findPost(key);
+    if (!p) return `<div class="empty">هذا المنشور انحذف.</div>`;
+    const body = p.type === "recipe" ? recipeCard({ ...(p.recipe || {}), idea: "", _ref: "p:" + key }, "", "", true) : `<article class="card">${scanDetails(p)}</article>`;
+    return `
+      <div class="post post-modal">
+        ${postHead(p)}
+        ${postArt(p, true)}
+        ${postActionsBar(p)}
+        ${postCaption(p)}
+        ${body}
+      </div>`;
+  }
+  function openPost(key) { openModal(postModalHtml(key), { type: "post", key }); }
+
+  function peopleRows(uids) {
+    if (!uids.length) return `<div class="empty">ما في أحد هنا للحين.</div>`;
+    return `<div class="people">${uids.map((uid) => {
+      const m = memberById(uid) || {};
+      return `
+        <div class="person">
+          <button type="button" class="post-author" data-open-profile="${esc(uid)}">
+            ${avatarHtml(uid, m.nickname, "avatar-sm")}
+            <span class="grow"><b>${esc(m.nickname || "عضو")}</b><span class="muted small">${esc(m.bio || "")}</span></span>
+          </button>
+          ${followBtn(uid, true)}
+        </div>`;
+    }).join("")}</div>`;
+  }
+  function followBtn(uid, small) {
+    if (!S.uid || uid === S.uid || S.mode !== "cloud") return "";
+    const on = amFollowing(uid);
+    return `<button type="button" class="btn ${on ? "btn-ghost" : "btn-primary"}${small ? " btn-sm" : ""}" data-follow="${esc(uid)}">${on ? "تتابعه ✓" : "متابعة"}</button>`;
+  }
+
+  function recommendHtml(key) {
+    const p = findPost(key);
+    const friends = followingOf(S.uid);
+    const title = p ? (p.type === "recipe" ? p.recipe.title : (p.bean || "نتيجة سكانر")) : "";
+    return `
+      <form id="recForm" data-key="${esc(key)}" class="form">
+        <h3>رشّح «${esc(title)}» لأصحابك</h3>
+        ${friends.length ? `
+          <p class="hint">اختر واحد أو أكثر من الناس اللي تتابعهم.</p>
+          <div class="pick-list">${friends.map((uid) => { const m = memberById(uid) || {}; return `<label class="pick"><input type="checkbox" name="to" value="${esc(uid)}"><span>${esc(m.nickname || "عضو")}</span></label>`; }).join("")}</div>
+          <input id="recNote" class="input" maxlength="140" placeholder="رسالة قصيرة (اختياري): لازم تجربها!">
+          <button type="submit" class="btn btn-primary">أرسل الترشيح</button>`
+        : `<div class="empty">ما تتابع أحد للحين. تابع أصحابك من <a href="#community" data-goto-members>المجتمع ← الأعضاء</a> وبعدها تقدر ترشّح لهم.</div>`}
+        <p class="form-msg" id="recMsg" role="status" hidden></p>
+      </form>`;
+  }
+
+  /* ---------- الملف الشخصي (أسلوب إنستغرام) ---------- */
+  function profileHeader(uid, m, isMe) {
+    const posts = (m.posts || []).length;
+    const followers = followersOf(uid).length;
+    const following = (m.following || []).length;
+    return `
+      <div class="profile-head">
+        ${avatarHtml(uid, m.nickname, "avatar-xl")}
+        <div class="profile-main">
+          <div class="profile-name-row">
+            <h2>${esc(m.nickname || "عضو")}</h2>
+            ${isMe ? `<button type="button" class="btn btn-ghost btn-sm" data-acc-tab="profile">تعديل الحساب</button>
+                      <button type="button" class="btn btn-ghost btn-sm" data-acc-tab="prefs">ذوقي</button>` : followBtn(uid)}
+          </div>
+          <div class="profile-counts">
+            <div><b>${posts}</b><span>منشور</span></div>
+            <button type="button" data-people="followers" data-uid="${esc(uid)}"><b>${followers}</b><span>متابِع</span></button>
+            <button type="button" data-people="following" data-uid="${esc(uid)}"><b>${following}</b><span>يتابع</span></button>
+          </div>
+        </div>
+      </div>
+      ${m.bio ? `<p class="profile-bio">${esc(m.bio)}</p>` : ""}
+      ${prefSummaryFor(m.prefs || {}, isMe)}`;
+  }
+  function postGrid(uid, m) {
+    const posts = [...(m.posts || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    if (!posts.length) return "";
+    return `<div class="post-grid">${posts.map((p) => {
+      const key = postKey(uid, p.id);
+      const n = likeCount(key);
+      return `<button type="button" class="tile" data-open-post="${esc(key)}" aria-label="افتح المنشور">${postArt(p)}${n ? `<span class="tile-likes">♥ ${n}</span>` : ""}</button>`;
+    }).join("")}</div>`;
+  }
+  function renderProfileView() {
+    const box = $("#profileView");
+    const uid = S.viewUid;
+    if (uid && uid === S.uid) { location.hash = "#account"; return; }
+    const m = uid && memberById(uid);
+    if (!m) { box.innerHTML = `<div class="empty">ما لقينا هذا العضو. <a href="#community">ارجع للمجتمع</a></div>`; return; }
+    box.innerHTML = `
+      <a href="#community" class="back-link">→ المجتمع</a>
+      ${profileHeader(uid, m, false)}
+      <h3 class="sub-title">المنشورات</h3>
+      ${postGrid(uid, m) || `<div class="empty">ما نشر شي للحين.</div>`}`;
+    hydrateAvatars(box);
+  }
+
+  /* ---------- مؤقت التحضير ---------- */
+  const B = { r: null, timer: null, start: 0, acc: 0, running: false, idx: -1, done: false, sound: true, audio: null, wake: null };
+  const mmss = (t) => { t = Math.max(0, Math.round(t)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
+  const parseTime = (s) => {
+    s = String(s || "").trim().replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+    if (!s) return null;
+    if (s.includes(":")) { const [a, b] = s.split(":"); const v = (parseInt(a, 10) || 0) * 60 + (parseInt(b, 10) || 0); return isNaN(v) ? null : v; }
+    const n = parseFloat(s); return isNaN(n) ? null : Math.round(n);
+  };
+  function resolveBrew(ref) {
+    const [kind, ...rest] = ref.split(":");
+    const id = rest.join(":");
+    if (kind === "f") return RECIPES[Number(id)];
+    if (kind === "m") return S.myRecipes.find((r) => r.id === id);
+    if (kind === "p") { const p = findPost(id); return p && p.recipe; }
+    return null;
+  }
+  function brewEnd(r) {
+    const last = r.pours[r.pours.length - 1].at;
+    return Math.max(r.brewEnd || 0, last + 30);
+  }
+  function beep(times) {
+    if (!B.sound) return;
+    try {
+      B.audio = B.audio || new (window.AudioContext || window.webkitAudioContext)();
+      for (let i = 0; i < times; i++) {
+        const o = B.audio.createOscillator(), g = B.audio.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(B.audio.destination);
+        const t0 = B.audio.currentTime + i * 0.25;
+        g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+        o.start(t0); o.stop(t0 + 0.2);
+      }
+    } catch (_) {}
+    try { navigator.vibrate && navigator.vibrate(times > 1 ? [150, 80, 150] : 150); } catch (_) {}
+  }
+  function brewElapsed() { return B.acc + (B.running ? (performance.now() - B.start) / 1000 : 0); }
+  function openBrew(r) {
+    if (!r || !r.pours || !r.pours.length) return;
+    stopBrew();
+    Object.assign(B, { r: { ...r, pours: [...r.pours].sort((a, b) => a.at - b.at) }, acc: 0, running: false, idx: -1, done: false });
+    const m = methodById(r.method);
+    const pourCount = B.r.pours.filter((p) => p.to != null).length;
+    openModal(`
+      <div class="brew">
+        <div class="brew-top">
+          <span class="method-icon">${icon(r.method, 32)}</span>
+          <div class="grow"><b>${esc(r.title)}</b><div class="muted small">${esc(m ? m.name : "")} · ${esc(typeof r.dose === "number" ? r.dose + " غ بن" : r.dose)} · ${pourCount} صبّات</div></div>
+        </div>
+        <div class="brew-clock" id="brewClock">0:00</div>
+        <div class="brew-progress"><i id="brewBar"></i></div>
+        <div class="brew-now" id="brewNow">جهّز البن والماء، واضغط ابدأ.</div>
+        <div class="brew-next muted" id="brewNext"></div>
+        <div class="brew-buttons">
+          <button type="button" class="btn btn-primary" id="brewToggle">ابدأ</button>
+          <button type="button" class="btn btn-ghost" id="brewReset">إعادة</button>
+          <label class="check"><input type="checkbox" id="brewSound" ${B.sound ? "checked" : ""}> صوت التنبيه</label>
+        </div>
+        <ol class="brew-steps" id="brewSteps">${B.r.pours.map((p, i) => `
+          <li data-i="${i}"><span class="brew-at">${mmss(p.at)}</span><span class="grow">${esc(p.label || (p.to != null ? `صب حتى ${p.to} غ` : "خطوة"))}</span>${p.to != null ? `<b>${p.to} غ</b>` : ""}</li>`).join("")}
+          <li data-i="end"><span class="brew-at">${mmss(brewEnd(B.r))}</span><span class="grow">النهاية: ارفع الدريبر وقدّم</span></li>
+        </ol>
+      </div>`, { type: "brew" });
+    updateBrew();
+  }
+  async function wakeOn() { try { if ("wakeLock" in navigator) B.wake = await navigator.wakeLock.request("screen"); } catch (_) { B.wake = null; } }
+  function wakeOff() { try { B.wake && B.wake.release(); } catch (_) {} B.wake = null; }
+  function stopBrew() { clearInterval(B.timer); B.timer = null; B.running = false; wakeOff(); }
+  function updateBrew() {
+    if (!B.r || !$("#brewClock")) return;
+    const t = brewElapsed();
+    const end = brewEnd(B.r);
+    const pours = B.r.pours;
+    let idx = -1;
+    pours.forEach((p, i) => { if (t >= p.at && (B.running || B.acc > 0)) idx = i; });
+    const finished = t >= end;
+    if (idx !== B.idx && idx >= 0) { B.idx = idx; beep(1); }
+    if (finished && !B.done) { B.done = true; beep(3); stopBrew(); B.acc = end; }
+    $("#brewClock").textContent = mmss(Math.min(t, end));
+    $("#brewBar").style.width = Math.min(100, (t / end) * 100) + "%";
+    const pourNums = []; let n = 0; pours.forEach((p) => { pourNums.push(p.to != null ? ++n : null); });
+    const total = n;
+    if (B.done) {
+      $("#brewNow").innerHTML = `<b>خلصت! ☕</b> استمتع بقهوتك.`;
+      $("#brewNext").textContent = "";
+    } else if (idx >= 0) {
+      const p = pours[idx];
+      $("#brewNow").innerHTML = `${pourNums[idx] ? `<span class="chip">الصبّة ${pourNums[idx]} من ${total}</span> ` : ""}<b>${esc(p.label || "")}</b>${p.to != null ? `<div class="brew-target">صب حتى <b>${p.to} غ</b></div>` : ""}`;
+      const nx = pours[idx + 1];
+      $("#brewNext").textContent = nx ? `الخطوة التالية بعد ${mmss(nx.at - t)}${nx.to != null ? `: صب حتى ${nx.to} غ` : ""}` : `النهاية بعد ${mmss(end - t)}`;
+    } else {
+      $("#brewNow").textContent = "جهّز البن والماء، واضغط ابدأ.";
+      $("#brewNext").textContent = pours[0] ? `أول خطوة: ${pours[0].label || ""}` : "";
+    }
+    document.querySelectorAll("#brewSteps li").forEach((li) => {
+      const i = li.dataset.i === "end" ? pours.length : Number(li.dataset.i);
+      li.classList.toggle("done", B.done || i < idx);
+      li.classList.toggle("current", !B.done && i === idx);
+    });
+    $("#brewToggle").textContent = B.done ? "ابدأ من جديد" : B.running ? "إيقاف مؤقت" : (B.acc > 0 ? "كمّل" : "ابدأ");
+  }
+  document.addEventListener("click", (e) => {
+    if (e.target.id === "brewToggle") {
+      if (B.done) { Object.assign(B, { acc: 0, idx: -1, done: false }); }
+      if (B.running) { B.acc = brewElapsed(); B.running = false; clearInterval(B.timer); wakeOff(); }
+      else {
+        if (B.sound) { try { B.audio = B.audio || new (window.AudioContext || window.webkitAudioContext)(); B.audio.resume(); } catch (_) {} }
+        B.start = performance.now(); B.running = true; wakeOn();
+        B.timer = setInterval(updateBrew, 200);
+      }
+      updateBrew();
+    }
+    if (e.target.id === "brewReset") { stopBrew(); Object.assign(B, { acc: 0, idx: -1, done: false }); updateBrew(); }
+  });
+  document.addEventListener("change", (e) => { if (e.target.id === "brewSound") B.sound = e.target.checked; });
+
+  /* ---------- أحداث التواصل ---------- */
+  function flashOn(btn, msg) { const old = btn.innerHTML; btn.innerHTML = msg; setTimeout(() => { if (btn.isConnected) btn.innerHTML = old; }, 2500); }
+  document.addEventListener("click", async (e) => {
+    const t = e.target;
+    const brew = t.closest("[data-brew]");
+    if (brew) { openBrew(resolveBrew(brew.dataset.brew)); return; }
+    const op = t.closest("[data-open-post]");
+    if (op) { openPost(op.dataset.openPost); return; }
+    const pr = t.closest("[data-open-profile]");
+    if (pr) { if (!modal.hidden) closeModal(); S.viewUid = pr.dataset.openProfile; if (location.hash === "#profile") renderProfileView(); else location.hash = pr.dataset.openProfile === S.uid ? "#account" : "#profile"; return; }
+    const like = t.closest("[data-like]");
+    if (like) {
+      like.disabled = true;
+      const res = await toggleLike(like.dataset.like);
+      like.disabled = false;
+      if (!res.ok && res.msg) openModal(`<div class="banner">${res.msg}</div>`);
+      return;
+    }
+    const rec = t.closest("[data-recommend]");
+    if (rec) { const c = canSocial(); openModal(c.ok ? recommendHtml(rec.dataset.recommend) : `<div class="banner">${c.msg}</div>`, { type: "rec" }); return; }
+    const fol = t.closest("[data-follow]");
+    if (fol) { fol.disabled = true; const res = await toggleFollow(fol.dataset.follow); fol.disabled = false; if (!res.ok && res.msg) fol.innerHTML = res.msg; return; }
+    const ppl = t.closest("[data-people]");
+    if (ppl) {
+      const uid = ppl.dataset.uid;
+      const list = ppl.dataset.people === "followers" ? followersOf(uid) : followingOf(uid);
+      openModal(`<h3>${ppl.dataset.people === "followers" ? "المتابِعون" : "يتابع"}</h3>${peopleRows(list)}`, { type: "people", list: ppl.dataset.people, uid });
+      return;
+    }
+    if (t.closest("[data-goto-members]")) { closeModal(); feedType = "members"; selectFeedTab("members"); }
+    const at = t.closest("[data-acc-tab]");
+    if (at) { S.accountTab = at.dataset.accTab; renderAccount(); }
+  });
+  document.addEventListener("submit", async (e) => {
+    if (e.target.id !== "recForm") return;
+    e.preventDefault();
+    const to = [...e.target.querySelectorAll('input[name="to"]:checked')].map((i) => i.value);
+    const msg = $("#recMsg");
+    if (!to.length) { showMsg(msg, "اختر شخص واحد على الأقل.", true); return; }
+    const res = await recommend(to, e.target.dataset.key, $("#recNote").value.trim());
+    showMsg(msg, res.ok ? `تم إرسال الترشيح لـ ${to.length} ✓` : res.msg, !res.ok);
+    if (res.ok) e.target.querySelector("button[type=submit]").disabled = true;
+  });
+
+  function refreshModal() {
+    if (!S.modal || modal.hidden) return;
+    if (S.modal.type === "post") { $("#modalBody").innerHTML = postModalHtml(S.modal.key); hydrateAvatars($("#modalBody")); }
+    if (S.modal.type === "people") {
+      const list = S.modal.list === "followers" ? followersOf(S.modal.uid) : followingOf(S.modal.uid);
+      $("#modalBody").innerHTML = `<h3>${S.modal.list === "followers" ? "المتابِعون" : "يتابع"}</h3>${peopleRows(list)}`;
+      hydrateAvatars($("#modalBody"));
+    }
   }
 
   document.addEventListener("click", async (e) => {
@@ -630,10 +1020,22 @@
 
   /* ================= صفحة المجتمع ================= */
   let feedType = "all";
-  makeTabs($("#feedTypeTabs"), [{ id: "all", name: "الكل" }, { id: "mine", name: "يناسب ذوقي" }, { id: "recipe", name: "الوصفات" }, { id: "scan", name: "نتائج السكانر" }], (id) => { feedType = id; renderFeed(); });
+  makeTabs($("#feedTypeTabs"), [{ id: "all", name: "الكل" }, { id: "following", name: "المتابَعين" }, { id: "mine", name: "يناسب ذوقي" }, { id: "recipe", name: "الوصفات" }, { id: "scan", name: "نتائج السكانر" }, { id: "members", name: "الأعضاء" }], (id) => { feedType = id; renderFeed(); });
+  function selectFeedTab(id) {
+    feedType = id;
+    document.querySelectorAll("#feedTypeTabs .tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.id === id)));
+    renderFeed();
+  }
   $("#feedMethod").innerHTML = `<option value="">كل طرق التحضير</option>` + METHODS.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
   $("#feedMethod").addEventListener("change", renderFeed);
 
+  document.addEventListener("input", (e) => {
+    if (e.target.id !== "memberSearch") return;
+    S.memberQuery = e.target.value;
+    const pos = e.target.selectionStart;
+    renderFeed();
+    const el = $("#memberSearch"); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (_) {} }
+  });
   function renderFeed() {
     const status = $("#communityStatus");
     const feed = $("#feed");
@@ -646,8 +1048,10 @@
     }
     const methodF = $("#feedMethod").value;
     const favM = myList("methods");
+    const fol = followingOf(S.uid);
+    $("#feedMethod").hidden = feedType === "members";
     const posts = communityPosts((p) =>
-      (feedType === "all" || (feedType === "mine" ? favM.includes(p.method) : p.type === feedType)) &&
+      (feedType === "all" || (feedType === "mine" ? favM.includes(p.method) : feedType === "following" ? fol.includes(p.uid) : p.type === feedType)) &&
       (!methodF || p.method === methodF));
     const memberCount = S.members.filter((m) => m.nickname).length;
     status.innerHTML = `
@@ -657,8 +1061,21 @@
         ${S.feedNote ? `<span class="muted">${esc(S.feedNote)}</span>` : ""}
       </div>`;
     if (!S.feedLoaded) { feed.innerHTML = `<div class="empty">جاري تحميل المجتمع…</div>`; return; }
+    if (feedType === "members") {
+      const q = (S.memberQuery || "").trim().toLowerCase();
+      const all = S.members.filter((m) => m.nickname && m.uid !== S.uid && (!q || m.nickname.toLowerCase().includes(q)))
+        .sort((a, b) => followersOf(b.uid).length - followersOf(a.uid).length);
+      feed.innerHTML = `
+        <div class="feed-col">
+          <input id="memberSearch" class="input" type="search" placeholder="ابحث عن عضو بالاسم…" value="${esc(S.memberQuery || "")}" aria-label="ابحث عن عضو">
+          ${all.length ? peopleRows(all.map((m) => m.uid)) : `<div class="empty">${q ? "ما في عضو بهذا الاسم." : "ما في أعضاء غيرك للحين. شارك رابط المنصة مع أصحابك."}</div>`}
+        </div>`;
+      hydrateAvatars(feed);
+      return;
+    }
+    if (feedType === "following" && !fol.length) { feed.innerHTML = `<div class="empty">ما تتابع أحد للحين. <button type="button" class="link-btn" data-goto-members>اكتشف الأعضاء</button></div>`; return; }
     if (feedType === "mine" && !favM.length) { feed.innerHTML = `<div class="empty">اختر طرق التحضير اللي تحبها من <a href="#account">حسابي ← ذوقي</a> عشان نعرض لك المنشورات المناسبة.</div>`; return; }
-    feed.innerHTML = posts.length ? posts.map(postCard).join("")
+    feed.innerHTML = posts.length ? `<div class="feed-col">${posts.map(postCard).join("")}</div>`
       : `<div class="empty">ما في منشورات هنا للحين. شارك وصفة من <a href="#account">حسابي</a> أو نتيجة من <a href="#scanner">سكانر البن</a>.</div>`;
     hydrateAvatars(feed);
   }
@@ -683,6 +1100,10 @@
     const label = $("#navAccountLabel");
     const av = $("#navAvatar");
     label.textContent = S.profile && S.profile.nickname ? S.profile.nickname : "حسابي";
+    const n = S.mode === "cloud" ? unseenRecs() : 0;
+    let badge = $("#navBadge");
+    if (!badge) { badge = document.createElement("span"); badge.id = "navBadge"; badge.className = "badge"; $("#navAccount").appendChild(badge); }
+    badge.textContent = n; badge.hidden = !n;
     if (S.me && S.me.avatarUrl && S.uid) { av.src = S.me.avatarUrl; av.hidden = false; } else av.hidden = true;
   }
 
@@ -712,32 +1133,21 @@
     }
 
     const p = S.profile;
-    const myPosts = (p.posts || []).length;
+    const inboxN = recsToMe().length;
+    const unseen = unseenRecs();
+    const TABS = [["posts", "المنشورات"], ["recipes", `وصفاتي الخاصة (${S.myRecipes.length})`], ["inbox", `الترشيحات${unseen ? ` <span class="badge">${unseen}</span>` : inboxN ? ` (${inboxN})` : ""}`], ["create", "ابتكر وصفة"], ["prefs", "ذوقي"], ["profile", "تعديل الحساب"]];
     box.innerHTML = `
       ${localBanner}
-      <div class="account-card card">
-        ${S.me && S.me.avatarUrl ? `<img class="avatar avatar-lg" src="${esc(S.me.avatarUrl)}" alt="">` : `<span class="avatar avatar-lg avatar-letter">${esc((p.nickname || "؟").slice(0, 1))}</span>`}
-        <div class="grow">
-          <h2>${esc(p.nickname)}</h2>
-          ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
-          <div class="stat-row">
-            <span><b>${S.myRecipes.length}</b> وصفة محفوظة</span>
-            <span><b>${myPosts}</b> منشور في المجتمع</span>
-            ${myList("grinders").length ? `<span><b>${myList("grinders").length}</b> مطحنة</span>` : ""}
-            ${p.joined ? `<span class="muted">عضو من ${esc(fmtDate(p.joined))}</span>` : ""}
-          </div>
-          ${prefSummary()}
-        </div>
+      ${S.backend === "firebase" && S.me && !S.me.emailVerified ? `<div class="banner">أرسلنا رابط تأكيد على إيميلك. أكّد إيميلك عشان تحمي حسابك. <button type="button" class="link-btn" data-resend-verify>أرسل الرابط مرة ثانية</button></div>` : ""}
+      <div class="profile-card">
+        ${profileHeader(S.uid || "local", p, true)}
         ${S.backend === "firebase" ? `<div class="account-side"><span class="muted small" dir="ltr">${esc(S.me && S.me.email || "")}</span><button type="button" class="btn btn-ghost btn-sm" data-signout>تسجيل الخروج</button></div>` : ""}
       </div>
-      ${S.backend === "firebase" && S.me && !S.me.emailVerified ? `<div class="banner">أرسلنا رابط تأكيد على إيميلك. أكّد إيميلك عشان تحمي حسابك. <button type="button" class="link-btn" data-resend-verify>أرسل الرابط مرة ثانية</button></div>` : ""}
-      <div class="tabs" role="tablist" id="accountTabs">
-        <button type="button" class="tab" role="tab" data-id="recipes" aria-selected="${S.accountTab === "recipes"}">وصفاتي</button>
-        <button type="button" class="tab" role="tab" data-id="create" aria-selected="${S.accountTab === "create"}">ابتكر وصفة</button>
-        <button type="button" class="tab" role="tab" data-id="prefs" aria-selected="${S.accountTab === "prefs"}">ذوقي</button>
-        <button type="button" class="tab" role="tab" data-id="profile" aria-selected="${S.accountTab === "profile"}">تعديل الحساب</button>
+      <div class="tabs profile-tabs" role="tablist" id="accountTabs">
+        ${TABS.map(([id, name]) => `<button type="button" class="tab" role="tab" data-id="${id}" aria-selected="${S.accountTab === id}">${name}</button>`).join("")}
       </div>
       <div id="accountPane"></div>`;
+    hydrateAvatars(box);
     $("#accountTabs").addEventListener("click", (e) => {
       const t = e.target.closest(".tab"); if (!t) return;
       S.accountTab = t.dataset.id; renderAccount();
@@ -846,18 +1256,18 @@
       </div>`;
   }
 
-  function prefSummary() {
-    const p = prefs();
+  function prefSummaryFor(p, isMe) {
+    const list = (k) => (Array.isArray(p[k]) ? p[k] : []);
     const items = [];
-    myList("methods").forEach((id) => { const m = methodById(id); if (m) items.push(`<a class="chip chip-link" href="#m-${id}">${esc(m.name)}</a>`); });
+    list("methods").forEach((id) => { const m = methodById(id); if (m) items.push(`<a class="chip chip-link" href="#m-${id}">${esc(m.name)}</a>`); });
     ["serve", "roasts"].forEach((k) => {
       const g = PREF_GROUPS.find((x) => x.key === k);
-      myList(k).forEach((id) => { const o = g.options.find((x) => x.id === id); if (o) items.push(`<span class="chip">${esc(o.name)}</span>`); });
+      list(k).forEach((id) => { const o = g.options.find((x) => x.id === id); if (o) items.push(`<span class="chip">${esc(o.name)}</span>`); });
     });
-    ["origins", "varieties", "processes", "drinks"].forEach((k) => myList(k).forEach((t) => items.push(`<span class="chip">${esc(t)}</span>`)));
-    myList("grinders").forEach((id) => { const g = grinderById(id); if (g) items.push(`<span class="chip" dir="ltr">${esc(g.name)}</span>`); });
+    ["origins", "varieties", "processes", "drinks"].forEach((k) => list(k).forEach((t) => items.push(`<span class="chip">${esc(t)}</span>`)));
+    list("grinders").forEach((id) => { const g = grinderById(id); if (g) items.push(`<span class="chip" dir="ltr">${esc(g.name)}</span>`); });
     if (p.otherGrinder) items.push(`<span class="chip">${esc(p.otherGrinder)}</span>`);
-    return items.length ? `<div class="chips">${items.join("")}</div>` : `<p class="small">ما اخترت ذوقك للحين. <button type="button" class="link-btn" data-goto-prefs>اختر الحين</button></p>`;
+    return items.length ? `<div class="chips profile-prefs">${items.join("")}</div>` : (isMe ? `<p class="small">ما اخترت ذوقك للحين. <button type="button" class="link-btn" data-goto-prefs>اختر الحين</button></p>` : "");
   }
 
   function prefsFormHtml() {
@@ -899,6 +1309,39 @@
   function renderAccountPane() {
     const pane = $("#accountPane");
     if (S.accountTab === "prefs") { pane.innerHTML = prefsFormHtml(); updatePickCounts(); return; }
+    if (S.accountTab === "posts") {
+      if (S.mode !== "cloud") {
+        pane.innerHTML = S.myRecipes.length
+          ? `<p class="hint">في الوضع المحلي تظهر وصفاتك الخاصة هنا. النشر للمجتمع يحتاج حساب على المنصة.</p><div class="post-grid">${S.myRecipes.map((r) => `<button type="button" class="tile" data-brew-or-open="${esc(r.id)}">${postArt({ type: "recipe", method: r.method, recipe: r })}</button>`).join("")}</div>`
+          : `<div class="empty">ما عندك وصفات للحين. <button type="button" class="link-btn" data-goto-create>ابتكر أول وصفة</button></div>`;
+        return;
+      }
+      const grid = postGrid(S.uid, S.profile);
+      pane.innerHTML = grid || `<div class="empty">ما نشرت شي للحين. <button type="button" class="link-btn" data-goto-create>ابتكر وصفة وانشرها</button> أو شارك نتيجة من <a href="#scanner">سكانر البن</a>.</div>`;
+      return;
+    }
+    if (S.accountTab === "inbox") {
+      const recs = recsToMe();
+      local.set(seenKey(), Date.now());
+      pane.innerHTML = recs.length ? `<div class="people">${recs.map((r) => {
+        const from = memberById(r.from) || {};
+        const post = findPost(r.post);
+        const title = post ? (post.type === "recipe" ? post.recipe.title : (post.bean || "نتيجة سكانر")) : "منشور محذوف";
+        return `
+          <div class="person rec">
+            <button type="button" class="post-author" data-open-profile="${esc(r.from)}">${avatarHtml(r.from, from.nickname, "avatar-sm")}</button>
+            <div class="grow">
+              <div><b>${esc(from.nickname || "عضو")}</b> رشّح لك <b>${esc(title)}</b></div>
+              ${r.note ? `<div class="caption">«${esc(r.note)}»</div>` : ""}
+              <div class="muted small">${esc(fmtDate(r.createdAt))}</div>
+            </div>
+            ${post ? `<button type="button" class="btn btn-primary btn-sm" data-open-post="${esc(r.post)}">افتح</button>` : ""}
+          </div>`;
+      }).join("")}</div>` : `<div class="empty">ما وصلك ترشيح للحين. لما أحد من أصحابك يرشّح لك وصفة بتظهر هنا.</div>`;
+      hydrateAvatars(pane);
+      updateNav();
+      return;
+    }
     if (S.accountTab === "profile") {
       pane.innerHTML = `
         <form id="profileForm" class="card form form-narrow" autocomplete="off">
@@ -918,7 +1361,7 @@
       return;
     }
     pane.innerHTML = S.myRecipes.length
-      ? `<div class="grid grid-2">${S.myRecipes.map((r) => recipeCard(r, `
+      ? `<div class="grid grid-2">${S.myRecipes.map((r) => recipeCard({ ...r, _ref: "m:" + r.id }, `
           <div class="card-foot">
             <button type="button" class="btn btn-primary btn-sm" data-share="${esc(r.id)}">${isShared(r.id) ? "منشورة في المجتمع ✓" : "انشر في المجتمع"}</button>
             <button type="button" class="btn btn-ghost btn-sm" data-copy="${esc(r.id)}">انسخ</button>
@@ -954,7 +1397,22 @@
           <div class="field"><label for="rClicks">ضبط المطحنة</label><input id="rClicks" class="input" maxlength="30" placeholder="مثال: 22 نقرة"></div>
         </div>
         <div class="field">
-          <label for="rSteps">الخطوات (كل خطوة في سطر)</label>
+          <label for="rIdea">فكرة التحضير</label>
+          <textarea id="rIdea" class="input" rows="3" maxlength="300" placeholder="شنو الفكرة ورا هالوصفة؟ مثال: صبّات قصيرة عشان أطلّع حلاوة الإثيوبي بدون مرارة"></textarea>
+          <small class="hint">تظهر كوصف للمنشور لما تنشر الوصفة.</small>
+        </div>
+        <fieldset class="pours">
+          <legend>الصبّات والمؤقت</legend>
+          <div class="field-row">
+            <div class="field"><label for="rPourCount">عدد الصبّات</label><input id="rPourCount" type="number" class="input" min="0" max="10" value="4"></div>
+            <div class="field"><label for="rGap">بين كل صبّة (ثانية)</label><input id="rGap" type="number" class="input" min="5" max="300" value="45"></div>
+            <div class="field"><label>&nbsp;</label><button type="button" class="btn btn-ghost" id="rAutoPours">وزّع تلقائيًا</button></div>
+          </div>
+          <p class="hint">أول صبّة بلوم بضعف وزن البن، والباقي يتوزع بالتساوي. تقدر تعدّل الوقت والكمية لكل صبّة.</p>
+          <div id="pourRows" class="pour-rows"></div>
+        </fieldset>
+        <div class="field">
+          <label for="rSteps">ملاحظات إضافية للخطوات (كل خطوة في سطر)</label>
           <textarea id="rSteps" class="input" rows="5" placeholder="بلوم 45 ثانية بـ 50غ ماء&#10;صب حتى 150غ&#10;صب حتى 240غ"></textarea>
         </div>
         <div class="field">
@@ -969,13 +1427,50 @@
         <p class="form-msg" id="rMsg" role="status" hidden></p>
       </form>`;
   }
+  const POUR_DEFAULTS = { v60: [4, 45], flat: [5, 30], chemex: [3, 60], aeropress: [1, 0], french: [1, 0], espresso: [1, 0], siphon: [1, 0], moka: [0, 0], turkish: [0, 0], coldbrew: [0, 0] };
   function applyDefaults() {
     const d = DEFAULTS[$("#rMethod").value];
     if (!d) return;
     $("#rDose").value = d.dose; $("#rRatio").value = d.ratio; $("#rTemp").value = d.temp;
     $("#rGrind").value = d.grind; $("#rTime").value = d.time;
+    const pd = POUR_DEFAULTS[$("#rMethod").value] || [0, 45];
+    $("#rPourCount").value = pd[0]; if (pd[1]) $("#rGap").value = pd[1];
     updateWater();
+    autoPours();
   }
+  function autoPours() {
+    const n = Math.max(0, Math.min(10, parseInt($("#rPourCount").value, 10) || 0));
+    const dose = parseFloat($("#rDose").value) || 0;
+    const total = Math.round(dose * (parseFloat($("#rRatio").value) || 0));
+    const gap = Math.max(5, parseInt($("#rGap").value, 10) || 45);
+    const rows = [];
+    if (n === 1) rows.push({ at: 0, to: total });
+    else if (n > 1) {
+      const bloom = Math.min(Math.round(dose * 2), total);
+      rows.push({ at: 0, to: bloom });
+      const rest = total - bloom;
+      for (let i = 1; i < n; i++) rows.push({ at: i * gap, to: Math.round(bloom + (rest * i) / (n - 1)) });
+    }
+    renderPourRows(rows);
+  }
+  function renderPourRows(rows) {
+    $("#pourRows").innerHTML = rows.length ? rows.map((r, i) => `
+      <div class="pour-row">
+        <span class="pour-num">${i + 1}</span>
+        <label>الوقت <input class="input" data-pour-at value="${mmss(r.at)}" inputmode="numeric" aria-label="وقت الصبّة ${i + 1}"></label>
+        <label>حتى (غ) <input class="input" data-pour-to type="number" min="0" value="${r.to}" aria-label="إجمالي الماء بعد الصبّة ${i + 1}"></label>
+        <label class="pour-label">وصف <input class="input" data-pour-label maxlength="60" value="${esc(r.label || (i === 0 && rows.length > 1 ? "بلوم" : ""))}" aria-label="وصف الصبّة ${i + 1}"></label>
+      </div>`).join("") : `<p class="hint">بدون صبّات، ما راح يظهر مؤقت لهذه الوصفة.</p>`;
+  }
+  function readPours() {
+    return [...document.querySelectorAll("#pourRows .pour-row")].map((row) => ({
+      at: parseTime(row.querySelector("[data-pour-at]").value) ?? 0,
+      to: (() => { const v = parseFloat(row.querySelector("[data-pour-to]").value); return isNaN(v) ? null : v; })(),
+      label: row.querySelector("[data-pour-label]").value.trim()
+    })).sort((a, b) => a.at - b.at);
+  }
+  document.addEventListener("click", (e) => { if (e.target.id === "rAutoPours") autoPours(); });
+  document.addEventListener("change", (e) => { if (e.target.id === "rPourCount" || e.target.id === "rGap") autoPours(); });
   function updateWater() {
     const dose = parseFloat($("#rDose").value) || 0;
     const ratio = parseFloat($("#rRatio").value) || 0;
@@ -1019,7 +1514,7 @@
       next.otherGrinder = ($("#prefOtherGrinder") && $("#prefOtherGrinder").value.trim()) || "";
       const res = await saveProfile({ prefs: next });
       if (!res.ok) { showMsg($("#prefsMsg"), res.msg, true); return; }
-      S.onboarding = false; S.accountTab = "recipes";
+      S.onboarding = false; S.accountTab = "posts";
       renderMethodGrid(); renderScannerGrinders(); renderGrinders();
       renderAccount();
       const note = document.createElement("p");
@@ -1041,8 +1536,11 @@
         temp: temp ? `${temp}°م` : "—", grind: grind ? grind.name : "—", time: $("#rTime").value.trim() || "—",
         steps: $("#rSteps").value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 20),
         notes: $("#rNotes").value.trim(),
-        grinder: $("#rGrinder").value, clicks: $("#rClicks").value.trim()
+        grinder: $("#rGrinder").value, clicks: $("#rClicks").value.trim(),
+        idea: $("#rIdea").value.trim(),
+        pours: readPours()
       };
+      r.brewEnd = parseTime($("#rTime").value) || 0;
       if (!r.title) return;
       const share = $("#rShare").checked;
       const res = await saveRecipe(r);
@@ -1063,8 +1561,10 @@
 
   document.addEventListener("click", async (e) => {
     if (e.target.closest("[data-goto-create]")) { S.accountTab = "create"; renderAccount(); return; }
+    const lt = e.target.closest("[data-brew-or-open]");
+    if (lt) { const r = S.myRecipes.find((x) => x.id === lt.dataset.brewOrOpen); if (r) openModal(recipeCard({ ...r, _ref: "m:" + r.id }), { type: "static" }); return; }
     if (e.target.closest("[data-goto-prefs]")) { S.accountTab = "prefs"; renderAccount(); return; }
-    if (e.target.closest("[data-skip-prefs]")) { S.onboarding = false; S.accountTab = "recipes"; renderAccount(); return; }
+    if (e.target.closest("[data-skip-prefs]")) { S.onboarding = false; S.accountTab = "posts"; renderAccount(); return; }
     const del = e.target.closest("[data-del]");
     if (del) {
       if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "متأكد؟"; return; }
@@ -1186,6 +1686,8 @@
     if (S.view === "community") renderFeed();
     if (S.view === "method") renderMethod();
     if (S.view === "account" && !document.activeElement?.closest("#accountView form")) renderAccount();
+    if (S.view === "profile") renderProfileView();
+    if (!document.activeElement?.closest("#modalBody form")) refreshModal();
     updateNav();
   }
 
