@@ -402,3 +402,5 @@ a { color: var(--accent); }
 .method-tile { position: relative; }
 .method-tile-mine { border-color: var(--accent); }
 .tile-badge { position: absolute; top: 12px; left: 12px; }
+.account-side { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 12px; }
+.auth-switch { color: var(--ink-soft); font-size: 14px; line-height: 2; }

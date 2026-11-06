@@ -74,6 +74,8 @@
     feedLoaded: false, feedNote: "",
     view: "home", methodId: null,
     accountTab: "recipes",
+    backend: "local",     // "claude" | "firebase" | "local"
+    auth: null, authMode: "signup",
     lastScan: null,
     flash: ""
   };
@@ -681,14 +683,16 @@
     const label = $("#navAccountLabel");
     const av = $("#navAvatar");
     label.textContent = S.profile && S.profile.nickname ? S.profile.nickname : "حسابي";
-    if (S.me && S.mode === "cloud") { av.src = S.me.avatarUrl; av.hidden = false; } else av.hidden = true;
+    if (S.me && S.me.avatarUrl && S.uid) { av.src = S.me.avatarUrl; av.hidden = false; } else av.hidden = true;
   }
 
   function renderAccount() {
     const box = $("#accountView");
-    if (!S.ready || (S.mode === "cloud" && !S.feedLoaded)) { box.innerHTML = `<div class="empty">جاري تحميل حسابك…</div>`; return; }
+    if (!S.ready) { box.innerHTML = `<div class="empty">جاري تحميل حسابك…</div>`; return; }
+    if (S.backend === "firebase" && !S.uid) { box.innerHTML = authFormHtml(); return; }
+    if (S.mode === "cloud" && !S.feedLoaded) { box.innerHTML = `<div class="empty">جاري تحميل حسابك…</div>`; return; }
     const localBanner = S.mode === "local"
-      ? `<div class="banner">أنت في <b>الوضع المحلي</b>: حسابك ووصفاتك تنحفظ في هذا المتصفح فقط. الحسابات الحقيقية والمجتمع تشتغل لما تفتح المنصة من رابطها على claude.ai وأنت مسجّل دخول.</div>` : "";
+      ? `<div class="banner">أنت في <b>الوضع المحلي</b>: حسابك ووصفاتك تنحفظ في هذا المتصفح فقط. الحسابات الحقيقية والمجتمع تشتغل على نسخة المنصة المربوطة بحسابات (claude.ai أو الموقع بعد ربطه بـ Firebase).</div>` : "";
 
     if (!S.profile || !S.profile.nickname) {
       box.innerHTML = `
@@ -698,7 +702,8 @@
         </header>
         ${localBanner}
         <form id="profileForm" class="card form form-narrow" autocomplete="off">
-          ${S.me && S.mode === "cloud" ? `<div class="post-head"><img class="avatar" src="${esc(S.me.avatarUrl)}" alt=""><div class="grow"><b>${esc(S.me.name || "حسابك على claude.ai")}</b><div class="muted small">تسجيل الدخول عن طريق حسابك على claude.ai</div></div></div>` : ""}
+          ${S.backend === "claude" && S.me ? `<div class="post-head"><img class="avatar" src="${esc(S.me.avatarUrl)}" alt=""><div class="grow"><b>${esc(S.me.name || "حسابك على claude.ai")}</b><div class="muted small">تسجيل الدخول عن طريق حسابك على claude.ai</div></div></div>` : ""}
+          ${S.backend === "firebase" && S.me ? `<div class="post-head"><span class="avatar avatar-letter avatar-sm">@</span><div class="grow"><b dir="ltr">${esc(S.me.email || "")}</b><div class="muted small">مسجّل دخول بالإيميل</div></div></div>` : ""}
           ${profileFields({})}
           <button type="submit" class="btn btn-primary">أنشئ حسابي</button>
           <p class="form-msg" id="profileMsg" role="status" hidden></p>
@@ -711,7 +716,7 @@
     box.innerHTML = `
       ${localBanner}
       <div class="account-card card">
-        ${S.me && S.mode === "cloud" ? `<img class="avatar avatar-lg" src="${esc(S.me.avatarUrl)}" alt="">` : `<span class="avatar avatar-lg avatar-letter">${esc((p.nickname || "؟").slice(0, 1))}</span>`}
+        ${S.me && S.me.avatarUrl ? `<img class="avatar avatar-lg" src="${esc(S.me.avatarUrl)}" alt="">` : `<span class="avatar avatar-lg avatar-letter">${esc((p.nickname || "؟").slice(0, 1))}</span>`}
         <div class="grow">
           <h2>${esc(p.nickname)}</h2>
           ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
@@ -723,7 +728,9 @@
           </div>
           ${prefSummary()}
         </div>
+        ${S.backend === "firebase" ? `<div class="account-side"><span class="muted small" dir="ltr">${esc(S.me && S.me.email || "")}</span><button type="button" class="btn btn-ghost btn-sm" data-signout>تسجيل الخروج</button></div>` : ""}
       </div>
+      ${S.backend === "firebase" && S.me && !S.me.emailVerified ? `<div class="banner">أرسلنا رابط تأكيد على إيميلك. أكّد إيميلك عشان تحمي حسابك. <button type="button" class="link-btn" data-resend-verify>أرسل الرابط مرة ثانية</button></div>` : ""}
       <div class="tabs" role="tablist" id="accountTabs">
         <button type="button" class="tab" role="tab" data-id="recipes" aria-selected="${S.accountTab === "recipes"}">وصفاتي</button>
         <button type="button" class="tab" role="tab" data-id="create" aria-selected="${S.accountTab === "create"}">ابتكر وصفة</button>
@@ -737,6 +744,95 @@
     });
     renderAccountPane();
   }
+
+  /* ---------- تسجيل الدخول بالإيميل (Firebase) ---------- */
+  function authFormHtml() {
+    const signup = S.authMode === "signup";
+    const reset = S.authMode === "reset";
+    return `
+      <header class="section-head">
+        <h2>${reset ? "استرجاع كلمة السر" : signup ? "أنشئ حسابك" : "تسجيل الدخول"}</h2>
+        <p>${reset ? "اكتب إيميلك ونرسل لك رابط تغيير كلمة السر." : signup ? "سجّل بإيميلك عشان تحفظ وصفاتك وتختار ذوقك وتنشر في المجتمع." : "ادخل بإيميلك وكلمة السر."}</p>
+      </header>
+      <form id="authForm" class="card form form-narrow" autocomplete="on" novalidate>
+        <div class="field">
+          <label for="aEmail">الإيميل</label>
+          <input id="aEmail" class="input" type="email" dir="ltr" autocomplete="email" required placeholder="name@example.com">
+        </div>
+        ${reset ? "" : `
+        <div class="field">
+          <label for="aPass">كلمة السر</label>
+          <input id="aPass" class="input" type="password" dir="ltr" autocomplete="${signup ? "new-password" : "current-password"}" required minlength="6">
+          ${signup ? `<small class="hint">6 حروف أو أرقام على الأقل.</small>` : ""}
+        </div>`}
+        ${signup ? `
+        <div class="field">
+          <label for="aPass2">أعد كتابة كلمة السر</label>
+          <input id="aPass2" class="input" type="password" dir="ltr" autocomplete="new-password" required minlength="6">
+        </div>` : ""}
+        <button type="submit" class="btn btn-primary">${reset ? "أرسل الرابط" : signup ? "أنشئ حسابي" : "دخول"}</button>
+        <p class="form-msg" id="authMsg" role="status" hidden></p>
+        <div class="auth-switch">
+          ${signup ? `عندك حساب؟ <button type="button" class="link-btn" data-auth-mode="login">سجّل دخول</button>`
+            : reset ? `<button type="button" class="link-btn" data-auth-mode="login">رجوع لتسجيل الدخول</button>`
+            : `ما عندك حساب؟ <button type="button" class="link-btn" data-auth-mode="signup">أنشئ حساب جديد</button>
+               <br><button type="button" class="link-btn" data-auth-mode="reset">نسيت كلمة السر؟</button>`}
+        </div>
+      </form>`;
+  }
+  const AUTH_ERRORS = {
+    "auth/invalid-email": "الإيميل مكتوب بشكل غلط.",
+    "auth/missing-email": "اكتب إيميلك.",
+    "auth/email-already-in-use": "هذا الإيميل مسجّل من قبل. جرّب تسجيل الدخول.",
+    "auth/weak-password": "كلمة السر ضعيفة. استخدم 6 حروف أو أرقام على الأقل.",
+    "auth/invalid-credential": "الإيميل أو كلمة السر غلط.",
+    "auth/invalid-login-credentials": "الإيميل أو كلمة السر غلط.",
+    "auth/wrong-password": "الإيميل أو كلمة السر غلط.",
+    "auth/user-not-found": "الإيميل أو كلمة السر غلط.",
+    "auth/too-many-requests": "محاولات كثيرة. انتظر شوي وحاول مرة ثانية.",
+    "auth/network-request-failed": "ما في اتصال بالإنترنت. تأكد من الاتصال وحاول مرة ثانية.",
+    "auth/user-disabled": "هذا الحساب موقوف."
+  };
+  const authErr = (e) => AUTH_ERRORS[e && e.code] || "ما قدرنا نكمل. حاول مرة ثانية.";
+
+  document.addEventListener("click", async (e) => {
+    const m = e.target.closest("[data-auth-mode]");
+    if (m) { S.authMode = m.dataset.authMode; renderAccount(); return; }
+    if (e.target.closest("[data-signout]")) { try { await S.auth.signOut(); } catch (_) {} return; }
+    const rv = e.target.closest("[data-resend-verify]");
+    if (rv) {
+      try { await S.auth.currentUser.sendEmailVerification(); rv.textContent = "انرسل ✓"; }
+      catch (err) { rv.textContent = authErr(err); }
+    }
+  });
+
+  document.addEventListener("submit", async (e) => {
+    if (e.target.id !== "authForm") return;
+    e.preventDefault();
+    const msg = $("#authMsg");
+    const email = $("#aEmail").value.trim();
+    const btn = e.target.querySelector("button[type=submit]");
+    try {
+      btn.disabled = true;
+      if (S.authMode === "reset") {
+        await S.auth.sendPasswordResetEmail(email);
+        showMsg(msg, "إذا الإيميل مسجّل عندنا، بيوصلك رابط تغيير كلمة السر خلال دقائق.");
+        return;
+      }
+      const pass = $("#aPass").value;
+      if (S.authMode === "signup") {
+        if (pass !== $("#aPass2").value) { showMsg(msg, "كلمتين السر مو متطابقتين.", true); return; }
+        const cred = await S.auth.createUserWithEmailAndPassword(email, pass);
+        try { await cred.user.sendEmailVerification(); } catch (_) {}
+      } else {
+        await S.auth.signInWithEmailAndPassword(email, pass);
+      }
+    } catch (err) {
+      showMsg(msg, authErr(err), true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   function profileFields(p) {
     return `
@@ -1004,7 +1100,7 @@
   const NO_WRITE = "ما عندك صلاحية الكتابة في المنصة. اطلب من صاحب المنصة يعطيك صلاحية مساهم (Contributor).";
   const errMsg = (e) => {
     const c = e && e.code;
-    if (c === "invalid_argument") return NO_WRITE;
+    if (c === "invalid_argument" || c === "permission-denied") return NO_WRITE;
     if (c === "quota_exceeded") return "المساحة امتلت. احذف بعض الوصفات القديمة وحاول مرة ثانية.";
     if (c === "resource_exhausted") return "طلبات كثيرة بوقت قصير. انتظر شوي وحاول مرة ثانية.";
     return "صار خطأ في الاتصال. حاول مرة ثانية بعد شوي.";
@@ -1093,28 +1189,72 @@
     updateNav();
   }
 
-  async function startCloud() {
+  let unsubMine = null;
+  function subscribeCommunity() {
     S.mode = "cloud";
-    // المجتمع: كل الأعضاء، يتحدث مباشرة
     const timer = setTimeout(() => { S.feedNote = "الاتصال بطيء، ممكن البيانات مو محدّثة."; rerenderLive(); }, 10000);
+    // المجتمع: كل الأعضاء، يتحدث مباشرة
     S.db.collection("community").onSnapshot((snap) => {
       S.members = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
-      const mine = S.members.find((m) => m.uid === S.uid);
-      if (mine) { const { uid, ...body } = mine; S.profile = body; }
+      syncOwnProfile();
       if (!snap.metadata.fromCache) { clearTimeout(timer); S.feedNote = ""; }
       S.feedLoaded = true;
       rerenderLive();
     }, () => { clearTimeout(timer); S.feedLoaded = true; S.feedNote = "ما قدرنا نحمّل المجتمع."; rerenderLive(); });
-
+  }
+  function syncOwnProfile() {
+    const mine = S.uid && S.members.find((m) => m.uid === S.uid);
+    if (mine) { const { uid, ...body } = mine; S.profile = body; }
+  }
+  function subscribeMine() {
+    if (unsubMine) unsubMine();
     // وصفاتي الخاصة: لا يشوفها غيري
-    S.db.collection("data/users/" + S.uid).onSnapshot((snap) => {
+    unsubMine = S.db.collection("data/users/" + S.uid).onSnapshot((snap) => {
       S.myRecipes = snap.docs.filter((d) => d.id.startsWith("r_")).map((d) => d.data()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       rerenderLive();
     }, () => {});
   }
 
+  /* ---------- Firebase: يشتغل فقط إذا انضافت الإعدادات في firebase-config.js ---------- */
+  const FIREBASE_VERSION = "10.12.2";
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src; el.onload = resolve; el.onerror = () => reject(new Error("load " + src));
+      document.head.appendChild(el);
+    });
+  }
+  async function startFirebase(config) {
+    if (!window.firebase) {
+      const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/`;
+      await loadScript(base + "firebase-app-compat.js");
+      await Promise.all([loadScript(base + "firebase-auth-compat.js"), loadScript(base + "firebase-firestore-compat.js")]);
+    }
+    const app = window.firebase.apps && window.firebase.apps.length ? window.firebase.app() : window.firebase.initializeApp(config);
+    S.backend = "firebase";
+    S.auth = app.auth();
+    S.db = app.firestore();
+    subscribeCommunity();
+    S.auth.onAuthStateChanged((u) => {
+      if (unsubMine) { unsubMine(); unsubMine = null; }
+      if (u) {
+        S.uid = u.uid;
+        S.me = { id: u.uid, email: u.email, emailVerified: u.emailVerified, avatarUrl: null };
+        S.profile = null; S.myRecipes = [];
+        syncOwnProfile();
+        subscribeMine();
+      } else {
+        S.uid = null; S.me = null; S.profile = null; S.myRecipes = []; S.accountTab = "recipes";
+      }
+      S.ready = true;
+      lastPrefsJson = "-";
+      rerenderLive();
+      if (S.view === "account") renderAccount();
+    });
+  }
+
   function startLocal() {
-    S.mode = "local";
+    S.mode = "local"; S.backend = "local";
     S.profile = local.get(LOCAL_PROFILE, null);
     const rs = local.get(LOCAL_RECIPES, []);
     S.myRecipes = Array.isArray(rs) ? rs.map((r) => ({ createdAt: 0, ...r })) : [];
@@ -1132,7 +1272,13 @@
       S.uid = S.me.id;
       S.isOwner = !!S.me.isOwner;
     }
-    if (db && S.uid) { S.db = db; await startCloud(); } else startLocal();
+    if (db && S.uid) {
+      S.backend = "claude"; S.db = db;
+      subscribeCommunity(); subscribeMine();
+    } else if (!user && window.SKMS_FIREBASE_CONFIG && window.SKMS_FIREBASE_CONFIG.apiKey) {
+      try { await startFirebase(window.SKMS_FIREBASE_CONFIG); return; }
+      catch (_) { startLocal(); S.firebaseFailed = true; }
+    } else startLocal();
     S.ready = true;
     updateNav();
     rerenderLive();

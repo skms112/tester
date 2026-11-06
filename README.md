@@ -13,7 +13,31 @@ python3 -m http.server 8000
 
 ## الحسابات والمجتمع
 - على claude.ai (نسخة الـ artifact): كل عضو يسجّل بحسابه على claude.ai، ووصفاته الخاصة تنحفظ في `data/users/<id>` (ما يشوفها غيره)، وملفه ومنشوراته في `community/<id>` (الكل يقرأ، وكل عضو يكتب ملفه فقط، وصاحب المنصة يقدر يزيل المنشورات).
-- في أي متصفح ثاني: وضع محلي، الحساب والوصفات تنحفظ في المتصفح فقط والمجتمع غير متاح (يحتاج خادم خلفي).
+- الموقع المستقل: تسجيل الدخول بالإيميل وكلمة السر عن طريق Firebase (التسجيل، الدخول، تأكيد الإيميل، استرجاع كلمة السر). البيانات في Firestore بنفس المسارات، ومحمية بـ `firestore.rules`.
+- إذا ما انربط Firebase: وضع محلي، الحساب والوصفات تنحفظ في المتصفح فقط والمجتمع غير متاح.
+
+## ربط Firebase (تسجيل بالإيميل)
+1. ادخل https://console.firebase.google.com وأنشئ مشروع جديد.
+2. Build ← Authentication ← Get started ← فعّل **Email/Password**.
+3. Build ← Firestore Database ← Create database (اختر أقرب منطقة، مثل `europe-west` أو `me-central`).
+4. Project settings ← Your apps ← أضف Web app، وانسخ الإعدادات في `assets/js/firebase-config.js` بدل `null`.
+5. ارفع قواعد الحماية والموقع (يحتاج Node.js):
+
+```bash
+npm install -g firebase-tools
+```
+
+```bash
+firebase login
+```
+
+```bash
+firebase deploy --project <PROJECT_ID>
+```
+
+بعدها الموقع يشتغل على `https://<PROJECT_ID>.web.app`. لإضافة Google أو Apple أو Facebook لاحقًا: فعّلها من Authentication ← Sign-in method، ونضيف أزرارها في الكود.
+
+لإعطاء حسابك صلاحية إدارة المنشورات، عيّن له custom claim اسمه `admin` (من Firebase Admin SDK).
 
 ## الملفات
 - `index.html`: الصفحة
