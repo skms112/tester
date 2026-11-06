@@ -2,9 +2,9 @@
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SKMSCOFFEE | دليل القهوة المختصة</title>
-  <meta name="description" content="SKMSCOFFEE: دليل القهوة المختصة: المطاحن، الوصفات، أنواع البن، المزارع، محامص الكويت، وسكانر البن لمعرفة الطحنة المناسبة.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>SKMSCOFFEE</title>
+  <meta name="description" content="SKMSCOFFEE: منصة القهوة المختصة: طرق التحضير، المطاحن، الوصفات، حسابات الأعضاء، مجتمع لمشاركة الوصفات، وسكانر البن.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -13,43 +13,59 @@
 <body>
   <header class="site-header">
     <div class="wrap header-inner">
-      <a href="#home" class="logo" aria-label="SKMSCOFFEE">
+      <a href="#home" class="logo" aria-label="SKMSCOFFEE: الرئيسية">
         <span class="logo-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" width="30" height="30"><ellipse cx="16" cy="16" rx="10" ry="14" transform="rotate(30 16 16)" fill="currentColor"/><path d="M10 6c6 6 6 14 12 20" stroke="var(--bg)" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
         </span>
         <span class="logo-text">SKMS<b>COFFEE</b></span>
       </a>
-      <button class="nav-toggle" aria-label="القائمة" aria-expanded="false">☰</button>
+      <button class="nav-toggle" type="button" aria-label="القائمة" aria-expanded="false">☰</button>
       <nav class="nav" aria-label="التنقل الرئيسي">
-        <a href="#types">القهوة المختصة</a>
-        <a href="#beans">أنواع البن</a>
-        <a href="#grinders">المطاحن</a>
-        <a href="#recipes">الوصفات</a>
-        <a href="#create">ابتكر وصفتك</a>
-        <a href="#farms">المزارع</a>
-        <a href="#roasters">محامص الكويت</a>
-        <a href="#scanner" class="nav-cta">سكانر البن</a>
+        <a href="#home" data-nav="home">طرق التحضير</a>
+        <a href="#recipes" data-nav="recipes">الوصفات</a>
+        <a href="#community" data-nav="community">المجتمع</a>
+        <a href="#types" data-nav="types">القهوة المختصة</a>
+        <a href="#beans" data-nav="beans">البن</a>
+        <a href="#grinders" data-nav="grinders">المطاحن</a>
+        <a href="#farms" data-nav="farms">المزارع</a>
+        <a href="#roasters" data-nav="roasters">محامص الكويت</a>
+        <a href="#scanner" data-nav="scanner" class="nav-cta">سكانر البن</a>
+        <a href="#account" data-nav="account" class="nav-account" id="navAccount">
+          <img id="navAvatar" class="avatar avatar-xs" alt="" hidden>
+          <span id="navAccountLabel">حسابي</span>
+        </a>
       </nav>
     </div>
   </header>
 
-  <main>
-    <!-- HERO -->
-    <section id="home" class="hero">
-      <div class="wrap hero-inner">
-        <p class="eyebrow">دليلك للقهوة المختصة</p>
-        <h1>من الحبّة إلى الفنجان،<br>كل شي عن <span class="accent">القهوة المختصة</span></h1>
-        <p class="lead">مطاحن يدوية وأوتوماتيكية، أشهر الوصفات، أنواع البن والمزارع، محامص الكويت، وسكانر يقترح لك الطحنة المناسبة حسب نوع قهوتك وطريقة تحضيرها.</p>
-        <div class="hero-actions">
-          <a href="#scanner" class="btn btn-primary">جرّب سكانر البن</a>
-          <a href="#recipes" class="btn btn-ghost">تصفّح الوصفات</a>
+  <main id="main">
+    <!-- HOME: method picker -->
+    <section class="view" data-view="home">
+      <div class="hero">
+        <div class="wrap">
+          <p class="eyebrow">منصة القهوة المختصة</p>
+          <h1>اختر طريقة التحضير،<br>ونعطيك <span class="accent">كل اللي تحتاجه</span></h1>
+          <p class="lead">اضغط على أي طريقة تحضير وتطلع لك الطحنة المناسبة والنسبة والحرارة والمطاحن الأنسب والوصفات المشهورة ووصفات أعضاء المنصة.</p>
         </div>
-        <ul class="hero-stats" id="heroStats"></ul>
+      </div>
+      <div class="wrap section-tight">
+        <div class="method-grid" id="methodGrid"></div>
+        <div class="home-links">
+          <a class="home-link" href="#scanner"><b>سكانر البن</b><span>صوّر البن واعرف الطحنة المناسبة</span></a>
+          <a class="home-link" href="#account"><b>حسابي</b><span>سجّل واحفظ وصفاتك وابتكر الجديد</span></a>
+          <a class="home-link" href="#community"><b>المجتمع</b><span>وصفات ونتائج أعضاء المنصة</span></a>
+          <a class="home-link" href="#roasters"><b>محامص الكويت</b><span>المحامص ومواقعها</span></a>
+        </div>
       </div>
     </section>
 
+    <!-- METHOD DETAIL -->
+    <section class="view section" data-view="method" hidden>
+      <div class="wrap" id="methodView"></div>
+    </section>
+
     <!-- SPECIALTY TYPES -->
-    <section id="types" class="section">
+    <section class="view section" data-view="types" hidden>
       <div class="wrap">
         <header class="section-head">
           <h2>القهوة المختصة وتفرعاتها</h2>
@@ -61,7 +77,7 @@
     </section>
 
     <!-- BEANS -->
-    <section id="beans" class="section section-alt">
+    <section class="view section" data-view="beans" hidden>
       <div class="wrap">
         <header class="section-head">
           <h2>أشهر أنواع البن</h2>
@@ -73,7 +89,7 @@
     </section>
 
     <!-- GRINDERS -->
-    <section id="grinders" class="section">
+    <section class="view section" data-view="grinders" hidden>
       <div class="wrap">
         <header class="section-head">
           <h2>المطاحن</h2>
@@ -84,12 +100,12 @@
           <input type="search" id="grinderSearch" class="input" placeholder="ابحث عن مطحنة…" aria-label="ابحث عن مطحنة">
         </div>
         <div class="grid grid-3" id="grinderGrid"></div>
-        <p class="note">* حجم الشفرات المذكور حسب المواصفات المنشورة للشركة المصنّعة. "خطوة النقرة" مذكورة فقط للمطاحن اللي تنشر الشركة مقدارها.</p>
+        <p class="note">* حجم الشفرات المذكور حسب المواصفات المنشورة للشركة المصنّعة. "خطوة النقرة" مذكورة فقط للمطاحن اللي ينتشر مقدارها.</p>
       </div>
     </section>
 
     <!-- RECIPES -->
-    <section id="recipes" class="section section-alt">
+    <section class="view section" data-view="recipes" hidden>
       <div class="wrap">
         <header class="section-head">
           <h2>أشهر الوصفات</h2>
@@ -100,82 +116,8 @@
       </div>
     </section>
 
-    <!-- CREATE RECIPE -->
-    <section id="create" class="section">
-      <div class="wrap">
-        <header class="section-head">
-          <h2>ابتكر وصفتك</h2>
-          <p>صمّم وصفتك الخاصة واحفظها، والحاسبة تحسب لك كمية الماء والنسبة تلقائيًا.</p>
-        </header>
-        <div class="create-layout">
-          <form id="recipeForm" class="card form" autocomplete="off">
-            <div class="field">
-              <label for="rName">اسم الوصفة</label>
-              <input id="rName" class="input" required maxlength="60" placeholder="مثال: V60 صباحي فاكهي">
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="rMethod">طريقة التحضير</label>
-                <select id="rMethod" class="input"></select>
-              </div>
-              <div class="field">
-                <label for="rBean">البن المستخدم</label>
-                <input id="rBean" class="input" maxlength="60" placeholder="مثال: إثيوبي غوجي مجفف">
-              </div>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="rDose">كمية البن (غ)</label>
-                <input id="rDose" type="number" class="input" min="1" max="200" step="0.1" value="15" required>
-              </div>
-              <div class="field">
-                <label for="rRatio">النسبة 1:</label>
-                <input id="rRatio" type="number" class="input" min="1" max="25" step="0.1" value="16" required>
-              </div>
-              <div class="field">
-                <label>الماء / الناتج</label>
-                <output id="rWater" class="input output">240 غ</output>
-              </div>
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="rTemp">حرارة الماء (°م)</label>
-                <input id="rTemp" type="number" class="input" min="0" max="100" value="93">
-              </div>
-              <div class="field">
-                <label for="rTime">الوقت الكلي</label>
-                <input id="rTime" class="input" maxlength="20" placeholder="مثال: 3:00">
-              </div>
-              <div class="field">
-                <label for="rGrind">الطحنة</label>
-                <select id="rGrind" class="input"></select>
-              </div>
-            </div>
-            <div class="field">
-              <label for="rSteps">الخطوات (كل خطوة في سطر)</label>
-              <textarea id="rSteps" class="input" rows="5" placeholder="تحميص البلوم 45 ثانية بـ 50غ ماء&#10;صب حتى 150غ&#10;صب حتى 240غ"></textarea>
-            </div>
-            <div class="field">
-              <label for="rNotes">ملاحظات التذوق</label>
-              <input id="rNotes" class="input" maxlength="120" placeholder="مثال: حمضية لطيفة، توت، شوكولاتة">
-            </div>
-            <p id="rMsg" class="form-msg" role="status" hidden></p>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">احفظ الوصفة</button>
-              <button type="button" id="rSuggest" class="btn btn-ghost">املأ بقيم مقترحة للطريقة</button>
-            </div>
-            <p class="note">الوصفات تنحفظ في متصفحك فقط.</p>
-          </form>
-          <div>
-            <h3 class="sub-title">وصفاتي</h3>
-            <div id="myRecipes" class="stack"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- FARMS -->
-    <section id="farms" class="section section-alt">
+    <section class="view section" data-view="farms" hidden>
       <div class="wrap">
         <header class="section-head">
           <h2>أشهر المزارع</h2>
@@ -186,7 +128,7 @@
     </section>
 
     <!-- ROASTERS -->
-    <section id="roasters" class="section">
+    <section class="view section" data-view="roasters" hidden>
       <div class="wrap">
         <header class="section-head">
           <h2>محامص الكويت</h2>
@@ -201,17 +143,18 @@
     </section>
 
     <!-- SCANNER -->
-    <section id="scanner" class="section section-dark">
+    <section class="view section section-dark" data-view="scanner" hidden>
       <div class="wrap">
         <header class="section-head">
           <h2>سكانر البن</h2>
-          <p>صوّر حبوب البن أو ارفع صورة، والسكانر يقدّر درجة التحميص من لون الحبوب. بعدها اختر طريقة التحضير والمطحنة ويطلع لك أنسب طحنة.</p>
+          <p>صوّر حبوب البن بالكاميرا أو ارفع صورة، والسكانر يقدّر درجة التحميص من لون الحبوب. بعدها اختر طريقة التحضير والمطحنة ويطلع لك أنسب طحنة، وتقدر تشارك النتيجة في المجتمع.</p>
         </header>
 
         <div class="scanner">
           <div class="card scan-step">
             <h3><span class="step-num">1</span> امسح البن</h3>
             <div class="scan-view" id="scanView">
+              <video id="scanVideo" playsinline muted hidden></video>
               <canvas id="scanCanvas" hidden></canvas>
               <img id="scanImg" alt="صورة البن الممسوحة" hidden>
               <div class="scan-frame" aria-hidden="true"><span></span></div>
@@ -225,6 +168,8 @@
                 صوّر البن
                 <input type="file" id="camInput" accept="image/*" capture="environment" hidden>
               </label>
+              <button type="button" class="btn btn-ghost" id="liveBtn" hidden>كاميرا مباشرة</button>
+              <button type="button" class="btn btn-primary" id="snapBtn" hidden>التقط وامسح</button>
               <label class="btn btn-ghost">
                 ارفع صورة
                 <input type="file" id="fileInput" accept="image/*" hidden>
@@ -273,12 +218,33 @@
         <p class="note note-dark">تقدير درجة التحميص من الصورة <b>تقريبي</b> ويتأثر بالإضاءة والكاميرا، لذلك تقدر تعدّله يدويًا. نطاقات الطحن بالميكرون إرشادية، والحكم الأخير لطعم الفنجان.</p>
       </div>
     </section>
+
+    <!-- COMMUNITY -->
+    <section class="view section" data-view="community" hidden>
+      <div class="wrap">
+        <header class="section-head">
+          <h2>المجتمع</h2>
+          <p>وصفات ونتائج سكانر شاركها أعضاء المنصة. شارك وصفاتك من صفحة <a href="#account">حسابي</a>، ونتائجك من <a href="#scanner">سكانر البن</a>.</p>
+        </header>
+        <div id="communityStatus"></div>
+        <div class="toolbar" id="community-toolbar">
+          <div class="tabs" role="tablist" id="feedTypeTabs"></div>
+          <select id="feedMethod" class="input" aria-label="فلتر طريقة التحضير"></select>
+        </div>
+        <div class="grid grid-2" id="feed"></div>
+      </div>
+    </section>
+
+    <!-- ACCOUNT -->
+    <section class="view section" data-view="account" hidden>
+      <div class="wrap" id="accountView"></div>
+    </section>
   </main>
 
   <footer class="site-footer">
     <div class="wrap footer-inner">
       <span class="logo-text">SKMS<b>COFFEE</b></span>
-      <p>دليل القهوة المختصة © <span id="year"></span></p>
+      <p>منصة القهوة المختصة © <span id="year"></span></p>
     </div>
   </footer>
 
