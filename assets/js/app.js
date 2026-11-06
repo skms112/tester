@@ -36,6 +36,33 @@
   const icon = (id, size = 40) =>
     `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[id] || ""}</svg>`;
 
+  /* ================= خيارات الذوق (اختيار متعدد) ================= */
+  const SERVE_STYLES = [
+    { id: "black", name: "سادة بدون إضافات" },
+    { id: "milk", name: "مع حليب" },
+    { id: "sweet", name: "مُحلّاة" },
+    { id: "iced", name: "باردة / مثلجة" },
+    { id: "spiced", name: "مع هيل أو بهارات" }
+  ];
+  const ROAST_LEVELS = [
+    { id: "light", name: "تحميص فاتح" },
+    { id: "medium", name: "تحميص متوسط" },
+    { id: "dark", name: "تحميص غامق" }
+  ];
+  const beanOpts = (cat) => BEANS.filter((b) => b.cat === cat).map((b) => ({ id: b.title, name: b.title }));
+  const PREF_GROUPS = [
+    { key: "methods", title: "طرق التحضير", hint: "اختر كل الطرق اللي تستخدمها", options: METHODS.map((m) => ({ id: m.id, name: m.name })) },
+    { key: "serve", title: "طريقة الشرب", hint: "كيف تحب تشرب قهوتك؟", options: SERVE_STYLES },
+    { key: "drinks", title: "المشروبات المفضلة", hint: "", options: SPECIALTY_TYPES.filter((t) => t.cat === "espresso" || t.cat === "cold" || t.cat === "traditional").map((t) => ({ id: t.title, name: t.title })) },
+    { key: "roasts", title: "درجة التحميص", hint: "", options: ROAST_LEVELS },
+    { key: "origins", title: "أنواع البن: المناشئ", hint: "", options: beanOpts("origin") },
+    { key: "varieties", title: "أنواع البن: الأصناف", hint: "", options: beanOpts("species").concat(beanOpts("variety")) },
+    { key: "processes", title: "أنواع البن: المعالجة", hint: "", options: beanOpts("process") },
+    { key: "grinders", title: "مطاحنك", hint: "اختر كل المطاحن اللي عندك، اليدوية والأوتوماتيكية", options: GRINDERS.map((g) => ({ id: g.id, name: g.name, group: g.type === "manual" ? "يدوية" : "أوتوماتيكية" })) }
+  ];
+  const prefs = () => (S.profile && S.profile.prefs) || {};
+  const myList = (key) => (Array.isArray(prefs()[key]) ? prefs()[key] : []);
+
   /* ================= الحالة ================= */
   const S = {
     mode: "local",        // "local" | "cloud"
@@ -98,15 +125,22 @@
   window.addEventListener("hashchange", route);
 
   /* ================= الرئيسية: شبكة الطرق ================= */
-  $("#methodGrid").innerHTML = METHODS.map((m) => {
-    const info = grindInfo((m.min + m.max) / 2);
-    return `
-      <a class="method-tile" href="#m-${m.id}">
-        <span class="method-icon">${icon(m.id)}</span>
-        <b>${esc(m.name)}</b>
-        <span class="method-meta">${esc(info.name)} · ${esc(m.ratio)}</span>
-      </a>`;
-  }).join("");
+  function renderMethodGrid() {
+    const fav = myList("methods");
+    const list = [...METHODS].sort((x, y) => (fav.includes(y.id) ? 1 : 0) - (fav.includes(x.id) ? 1 : 0));
+    $("#methodGrid").innerHTML = list.map((m) => {
+      const info = grindInfo((m.min + m.max) / 2);
+      const mine = fav.includes(m.id);
+      return `
+        <a class="method-tile${mine ? " method-tile-mine" : ""}" href="#m-${m.id}">
+          ${mine ? `<span class="chip chip-me tile-badge">طريقتي</span>` : ""}
+          <span class="method-icon">${icon(m.id)}</span>
+          <b>${esc(m.name)}</b>
+          <span class="method-meta">${esc(info.name)} · ${esc(m.ratio)}</span>
+        </a>`;
+    }).join("");
+  }
+  renderMethodGrid();
 
   /* ================= صفحة الطريقة ================= */
   function grindersFor(m) {
@@ -124,7 +158,8 @@
     if (!m) return;
     const info = grindInfo((m.min + m.max) / 2);
     const recipes = RECIPES.filter((r) => r.method === m.id);
-    const grinders = grindersFor(m);
+    const owned = myList("grinders");
+    const grinders = grindersFor(m).sort((x, y) => (owned.includes(y.id) ? 1 : 0) - (owned.includes(x.id) ? 1 : 0));
     const drinks = m.id === "espresso" ? SPECIALTY_TYPES.filter((t) => t.cat === "espresso") : [];
     const posts = communityPosts((p) => p.method === m.id);
     const SCALE_MAX = 1400;
@@ -166,7 +201,7 @@
         : `<div class="empty">ما في وصفات من الأعضاء لهذه الطريقة للحين. كن أول من يشارك.</div>`}
 
       <h3 class="sub-title">مطاحن مناسبة</h3>
-      <div class="grid grid-3">${grinders.map(grinderCard).join("")}</div>
+      <div class="grid grid-3">${grinders.map((g) => grinderCard(g, owned.includes(g.id))).join("")}</div>
     `;
     hydrateAvatars($("#methodView"));
   }
@@ -205,10 +240,10 @@
   renderBeans("all");
 
   /* ================= المطاحن ================= */
-  function grinderCard(g) {
+  function grinderCard(g, owned) {
     return `
       <article class="card">
-        <div class="chips chips-top"><span class="chip">${g.type === "manual" ? "يدوية" : "أوتوماتيكية"}</span></div>
+        <div class="chips chips-top"><span class="chip">${g.type === "manual" ? "يدوية" : "أوتوماتيكية"}</span>${owned ? `<span class="chip chip-me">عندي</span>` : ""}</div>
         <h3 dir="ltr" class="ltr-title">${esc(g.name)}</h3>
         <p>${esc(g.desc)}</p>
         <dl class="specs">
@@ -223,7 +258,7 @@
   function renderGrinders() {
     const q = $("#grinderSearch").value.trim().toLowerCase();
     const list = GRINDERS.filter((g) => (grinderCat === "all" || g.type === grinderCat) && (!q || (g.name + " " + g.brand).toLowerCase().includes(q)));
-    $("#grinderGrid").innerHTML = list.length ? list.map(grinderCard).join("") : `<div class="empty">ما في نتائج.</div>`;
+    $("#grinderGrid").innerHTML = list.length ? list.map((g) => grinderCard(g, myList("grinders").includes(g.id))).join("") : `<div class="empty">ما في نتائج.</div>`;
   }
   makeTabs($("#grinderTabs"), GRINDER_CATS, (id) => { grinderCat = id; renderGrinders(); });
   $("#grinderSearch").addEventListener("input", renderGrinders);
@@ -248,6 +283,7 @@
           <div><small>الوقت</small><b>${esc(r.time)}</b></div>
         </div>
         ${r.steps && r.steps.length ? `<ol class="recipe-steps">${r.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
+        ${r.grinder && grinderById(r.grinder) ? `<p class="small"><b>المطحنة:</b> <span dir="ltr">${esc(grinderById(r.grinder).name)}</span>${r.clicks ? ` · ${esc(r.clicks)}` : ""}</p>` : ""}
         ${r.notes ? `<p><b>التذوق:</b> ${esc(r.notes)}</p>` : ""}
         ${extra}
       </article>`;
@@ -320,10 +356,22 @@
 
   $("#sMethod").innerHTML = METHODS.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
   $("#sMethod").value = "v60";
-  $("#sGrinder").innerHTML = `<option value="">— اختر (اختياري) —</option>` +
-    `<optgroup label="يدوية">${GRINDERS.filter((g) => g.type === "manual").map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join("")}</optgroup>` +
-    `<optgroup label="أوتوماتيكية">${GRINDERS.filter((g) => g.type === "electric").map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join("")}</optgroup>`;
-  $("#sGrinder").value = local.get("skmscoffee.grinder", "") || "";
+  function grinderOptions(emptyLabel) {
+    const owned = myList("grinders");
+    const opt = (g) => `<option value="${g.id}">${esc(g.name)}</option>`;
+    return `<option value="">${emptyLabel}</option>` +
+      (owned.length ? `<optgroup label="مطاحني">${GRINDERS.filter((g) => owned.includes(g.id)).map(opt).join("")}</optgroup>` : "") +
+      `<optgroup label="يدوية">${GRINDERS.filter((g) => g.type === "manual" && !owned.includes(g.id)).map(opt).join("")}</optgroup>` +
+      `<optgroup label="أوتوماتيكية">${GRINDERS.filter((g) => g.type === "electric" && !owned.includes(g.id)).map(opt).join("")}</optgroup>`;
+  }
+  function renderScannerGrinders() {
+    const sel = $("#sGrinder");
+    const keep = sel.value || local.get("skmscoffee.grinder", "") || "";
+    sel.innerHTML = grinderOptions("— اختر (اختياري) —");
+    const owned = myList("grinders");
+    sel.value = keep && GRINDERS.some((g) => g.id === keep) ? keep : (owned[0] || "");
+  }
+  renderScannerGrinders();
   $("#sGrinder").addEventListener("change", () => local.set("skmscoffee.grinder", $("#sGrinder").value));
 
   // زر "صوّر البن" يفتح الكاميرا عبر منتقي الصور (يشتغل بكل مكان)
@@ -580,7 +628,7 @@
 
   /* ================= صفحة المجتمع ================= */
   let feedType = "all";
-  makeTabs($("#feedTypeTabs"), [{ id: "all", name: "الكل" }, { id: "recipe", name: "الوصفات" }, { id: "scan", name: "نتائج السكانر" }], (id) => { feedType = id; renderFeed(); });
+  makeTabs($("#feedTypeTabs"), [{ id: "all", name: "الكل" }, { id: "mine", name: "يناسب ذوقي" }, { id: "recipe", name: "الوصفات" }, { id: "scan", name: "نتائج السكانر" }], (id) => { feedType = id; renderFeed(); });
   $("#feedMethod").innerHTML = `<option value="">كل طرق التحضير</option>` + METHODS.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
   $("#feedMethod").addEventListener("change", renderFeed);
 
@@ -595,7 +643,10 @@
       return;
     }
     const methodF = $("#feedMethod").value;
-    const posts = communityPosts((p) => (feedType === "all" || p.type === feedType) && (!methodF || p.method === methodF));
+    const favM = myList("methods");
+    const posts = communityPosts((p) =>
+      (feedType === "all" || (feedType === "mine" ? favM.includes(p.method) : p.type === feedType)) &&
+      (!methodF || p.method === methodF));
     const memberCount = S.members.filter((m) => m.nickname).length;
     status.innerHTML = `
       <div class="stat-row">
@@ -604,6 +655,7 @@
         ${S.feedNote ? `<span class="muted">${esc(S.feedNote)}</span>` : ""}
       </div>`;
     if (!S.feedLoaded) { feed.innerHTML = `<div class="empty">جاري تحميل المجتمع…</div>`; return; }
+    if (feedType === "mine" && !favM.length) { feed.innerHTML = `<div class="empty">اختر طرق التحضير اللي تحبها من <a href="#account">حسابي ← ذوقي</a> عشان نعرض لك المنشورات المناسبة.</div>`; return; }
     feed.innerHTML = posts.length ? posts.map(postCard).join("")
       : `<div class="empty">ما في منشورات هنا للحين. شارك وصفة من <a href="#account">حسابي</a> أو نتيجة من <a href="#scanner">سكانر البن</a>.</div>`;
     hydrateAvatars(feed);
@@ -666,14 +718,16 @@
           <div class="stat-row">
             <span><b>${S.myRecipes.length}</b> وصفة محفوظة</span>
             <span><b>${myPosts}</b> منشور في المجتمع</span>
-            ${p.method && methodById(p.method) ? `<span>طريقتي المفضلة: <a href="#m-${p.method}">${esc(methodById(p.method).name)}</a></span>` : ""}
+            ${myList("grinders").length ? `<span><b>${myList("grinders").length}</b> مطحنة</span>` : ""}
             ${p.joined ? `<span class="muted">عضو من ${esc(fmtDate(p.joined))}</span>` : ""}
           </div>
+          ${prefSummary()}
         </div>
       </div>
       <div class="tabs" role="tablist" id="accountTabs">
         <button type="button" class="tab" role="tab" data-id="recipes" aria-selected="${S.accountTab === "recipes"}">وصفاتي</button>
         <button type="button" class="tab" role="tab" data-id="create" aria-selected="${S.accountTab === "create"}">ابتكر وصفة</button>
+        <button type="button" class="tab" role="tab" data-id="prefs" aria-selected="${S.accountTab === "prefs"}">ذوقي</button>
         <button type="button" class="tab" role="tab" data-id="profile" aria-selected="${S.accountTab === "profile"}">تعديل الحساب</button>
       </div>
       <div id="accountPane"></div>`;
@@ -691,17 +745,64 @@
         <input id="pNick" class="input" required maxlength="30" value="${esc(p.nickname || "")}" placeholder="مثال: أبو سعود">
       </div>
       <div class="field">
-        <label for="pMethod">طريقتك المفضلة</label>
-        <select id="pMethod" class="input"><option value="">—</option>${METHOD_OPTIONS}</select>
-      </div>
-      <div class="field">
         <label for="pBio">نبذة عنك (اختياري)</label>
         <input id="pBio" class="input" maxlength="120" value="${esc(p.bio || "")}" placeholder="مثال: أحب الإثيوبي المغسول على V60">
       </div>`;
   }
 
+  function prefSummary() {
+    const p = prefs();
+    const items = [];
+    myList("methods").forEach((id) => { const m = methodById(id); if (m) items.push(`<a class="chip chip-link" href="#m-${id}">${esc(m.name)}</a>`); });
+    ["serve", "roasts"].forEach((k) => {
+      const g = PREF_GROUPS.find((x) => x.key === k);
+      myList(k).forEach((id) => { const o = g.options.find((x) => x.id === id); if (o) items.push(`<span class="chip">${esc(o.name)}</span>`); });
+    });
+    ["origins", "varieties", "processes", "drinks"].forEach((k) => myList(k).forEach((t) => items.push(`<span class="chip">${esc(t)}</span>`)));
+    myList("grinders").forEach((id) => { const g = grinderById(id); if (g) items.push(`<span class="chip" dir="ltr">${esc(g.name)}</span>`); });
+    if (p.otherGrinder) items.push(`<span class="chip">${esc(p.otherGrinder)}</span>`);
+    return items.length ? `<div class="chips">${items.join("")}</div>` : `<p class="small">ما اخترت ذوقك للحين. <button type="button" class="link-btn" data-goto-prefs>اختر الحين</button></p>`;
+  }
+
+  function prefsFormHtml() {
+    const sel = prefs();
+    const group = (g) => {
+      const chosen = Array.isArray(sel[g.key]) ? sel[g.key] : [];
+      const chip = (o) => `<label class="pick"><input type="checkbox" name="${g.key}" value="${esc(o.id)}"${chosen.includes(o.id) ? " checked" : ""}><span${g.key === "grinders" ? ' dir="ltr"' : ""}>${esc(o.name)}</span></label>`;
+      const sub = [...new Set(g.options.map((o) => o.group).filter(Boolean))];
+      const body = sub.length
+        ? sub.map((name) => `<div class="pick-sub">${esc(name)}</div><div class="pick-list">${g.options.filter((o) => o.group === name).map(chip).join("")}</div>`).join("")
+        : `<div class="pick-list">${g.options.map(chip).join("")}</div>`;
+      return `
+        <fieldset class="pick-group">
+          <legend>${esc(g.title)} <span class="pick-count" data-count="${g.key}"></span></legend>
+          ${g.hint ? `<p class="hint">${esc(g.hint)}</p>` : ""}
+          ${body}
+          ${g.key === "grinders" ? `<input id="prefOtherGrinder" class="input" maxlength="60" placeholder="مطحنة غير موجودة في القائمة؟ اكتب اسمها" value="${esc(sel.otherGrinder || "")}">` : ""}
+        </fieldset>`;
+    };
+    return `
+      <form id="prefsForm" class="card form" autocomplete="off">
+        ${S.onboarding ? `<div class="banner banner-ok"><b>أهلًا ${esc(S.profile.nickname)}!</b> تم إنشاء حسابك. اختر ذوقك في القهوة وتقدر تختار أكثر من خيار في كل قسم، وتقدر تغيّرها بأي وقت.</div>` : ""}
+        ${PREF_GROUPS.map(group).join("")}
+        <div class="form-actions sticky-actions">
+          <button type="submit" class="btn btn-primary">احفظ ذوقي</button>
+          ${S.onboarding ? `<button type="button" class="btn btn-ghost" data-skip-prefs>تخطّي الحين</button>` : ""}
+        </div>
+        <p class="form-msg" id="prefsMsg" role="status" hidden></p>
+      </form>`;
+  }
+  function updatePickCounts() {
+    document.querySelectorAll("#prefsForm [data-count]").forEach((el) => {
+      const n = document.querySelectorAll(`#prefsForm input[name="${el.dataset.count}"]:checked`).length;
+      el.textContent = n ? `(${n})` : "";
+    });
+  }
+  document.addEventListener("change", (e) => { if (e.target.closest("#prefsForm")) updatePickCounts(); });
+
   function renderAccountPane() {
     const pane = $("#accountPane");
+    if (S.accountTab === "prefs") { pane.innerHTML = prefsFormHtml(); updatePickCounts(); return; }
     if (S.accountTab === "profile") {
       pane.innerHTML = `
         <form id="profileForm" class="card form form-narrow" autocomplete="off">
@@ -709,14 +810,14 @@
           <button type="submit" class="btn btn-primary">احفظ التعديلات</button>
           <p class="form-msg" id="profileMsg" role="status" hidden></p>
         </form>`;
-      $("#pMethod").value = S.profile.method || "";
       return;
     }
     if (S.accountTab === "create") {
       pane.innerHTML = createFormHtml();
-      const mId = S.presetMethod || S.profile.method || "v60";
+      const mId = S.presetMethod || myList("methods")[0] || "v60";
       S.presetMethod = null;
       $("#rMethod").value = mId;
+      $("#rGrinder").value = myList("grinders")[0] || "";
       applyDefaults();
       return;
     }
@@ -751,6 +852,10 @@
           <div class="field"><label for="rTemp">حرارة الماء (°م)</label><input id="rTemp" type="number" class="input" min="0" max="100" value="93"></div>
           <div class="field"><label for="rTime">الوقت الكلي</label><input id="rTime" class="input" maxlength="20" placeholder="مثال: 3:00"></div>
           <div class="field"><label for="rGrind">الطحنة</label><select id="rGrind" class="input">${GRIND_OPTIONS}</select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="rGrinder">المطحنة</label><select id="rGrinder" class="input">${grinderOptions("—")}</select></div>
+          <div class="field"><label for="rClicks">ضبط المطحنة</label><input id="rClicks" class="input" maxlength="30" placeholder="مثال: 22 نقرة"></div>
         </div>
         <div class="field">
           <label for="rSteps">الخطوات (كل خطوة في سطر)</label>
@@ -806,9 +911,26 @@
       e.preventDefault();
       const nickname = $("#pNick").value.trim();
       if (!nickname) return;
-      const res = await saveProfile({ nickname, bio: $("#pBio").value.trim(), method: $("#pMethod").value });
-      if (res.ok) { S.accountTab = S.accountTab === "profile" ? "recipes" : S.accountTab; renderAccount(); }
+      const isNew = !S.profile || !S.profile.nickname;
+      const res = await saveProfile({ nickname, bio: $("#pBio").value.trim() });
+      if (res.ok) { S.accountTab = isNew ? "prefs" : "recipes"; S.onboarding = isNew; renderAccount(); }
       else showMsg($("#profileMsg"), res.msg, true);
+    }
+    if (e.target.id === "prefsForm") {
+      e.preventDefault();
+      const next = {};
+      PREF_GROUPS.forEach((g) => { next[g.key] = [...document.querySelectorAll(`#prefsForm input[name="${g.key}"]:checked`)].map((i) => i.value); });
+      next.otherGrinder = ($("#prefOtherGrinder") && $("#prefOtherGrinder").value.trim()) || "";
+      const res = await saveProfile({ prefs: next });
+      if (!res.ok) { showMsg($("#prefsMsg"), res.msg, true); return; }
+      S.onboarding = false; S.accountTab = "recipes";
+      renderMethodGrid(); renderScannerGrinders(); renderGrinders();
+      renderAccount();
+      const note = document.createElement("p");
+      note.className = "form-msg"; note.setAttribute("role", "status"); note.textContent = "تم حفظ ذوقك ✓ رتّبنا طرقك ومطاحنك في المنصة.";
+      $("#accountPane").prepend(note);
+      setTimeout(() => note.remove(), 4000);
+      return;
     }
     if (e.target.id === "recipeForm") {
       e.preventDefault();
@@ -822,7 +944,8 @@
         method: $("#rMethod").value, dose, water: Math.round(dose * ratio * 10) / 10, ratio: `1:${ratio}`,
         temp: temp ? `${temp}°م` : "—", grind: grind ? grind.name : "—", time: $("#rTime").value.trim() || "—",
         steps: $("#rSteps").value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 20),
-        notes: $("#rNotes").value.trim()
+        notes: $("#rNotes").value.trim(),
+        grinder: $("#rGrinder").value, clicks: $("#rClicks").value.trim()
       };
       if (!r.title) return;
       const share = $("#rShare").checked;
@@ -844,6 +967,8 @@
 
   document.addEventListener("click", async (e) => {
     if (e.target.closest("[data-goto-create]")) { S.accountTab = "create"; renderAccount(); return; }
+    if (e.target.closest("[data-goto-prefs]")) { S.accountTab = "prefs"; renderAccount(); return; }
+    if (e.target.closest("[data-skip-prefs]")) { S.onboarding = false; S.accountTab = "recipes"; renderAccount(); return; }
     const del = e.target.closest("[data-del]");
     if (del) {
       if (del.dataset.confirm !== "1") { del.dataset.confirm = "1"; del.textContent = "متأكد؟"; return; }
@@ -958,7 +1083,10 @@
     return { ok: true };
   }
 
+  let lastPrefsJson = "";
   function rerenderLive() {
+    const pj = JSON.stringify(prefs());
+    if (pj !== lastPrefsJson) { lastPrefsJson = pj; renderMethodGrid(); renderScannerGrinders(); renderGrinders(); }
     if (S.view === "community") renderFeed();
     if (S.view === "method") renderMethod();
     if (S.view === "account" && !document.activeElement?.closest("#accountView form")) renderAccount();

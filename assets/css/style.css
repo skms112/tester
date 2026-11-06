@@ -374,3 +374,31 @@ a { color: var(--accent); }
 /* Share box inside scanner */
 .share-box { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--dark-line); }
 .section-dark a { color: var(--dark-accent); }
+
+/* ---------- Preferences (multi-select) ---------- */
+.pick-group { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.pick-group + .pick-group { border-top: 1px solid var(--line); padding-top: 16px; }
+.pick-group legend { font-weight: 800; font-size: 17px; padding: 0; margin-bottom: 4px; }
+.pick-count { color: var(--accent); font-weight: 700; font-size: 15px; }
+.pick-sub { color: var(--ink-soft); font-size: 13px; font-weight: 700; margin-top: 4px; }
+.pick-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.pick { position: relative; cursor: pointer; }
+.pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pick span {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 6px 14px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font-size: 14px; transition: background .12s ease, border-color .12s ease;
+}
+.pick:hover span { border-color: var(--accent); }
+.pick input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.pick input:checked + span::before { content: "✓"; }
+.pick input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .pick span { transition: none; } }
+.sticky-actions {
+  position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 5;
+  background: var(--surface); padding-block: 12px; border-top: 1px solid var(--line);
+}
+.banner-ok { background: var(--ok-soft); }
+.method-tile { position: relative; }
+.method-tile-mine { border-color: var(--accent); }
+.tile-badge { position: absolute; top: 12px; left: 12px; }
